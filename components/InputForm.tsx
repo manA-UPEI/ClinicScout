@@ -23,14 +23,14 @@ export default function InputForm({ onSubmit }: Props) {
       className="flex flex-col gap-5 rounded-xl border border-black/10 dark:border-white/15 p-6"
     >
       <div>
-        <h1 className="text-xl font-semibold">ClinicScout AI</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <h1 className="text-2xl font-bold">ClinicScout AI</h1>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
           Find the best nearby walk-in clinic, right now. Searches real clinic
           listings from OpenStreetMap.
         </p>
       </div>
 
-      <label className="flex flex-col gap-1 text-sm font-medium">
+      <label className="flex flex-col gap-2 text-sm font-semibold text-gray-900 dark:text-white">
         Location
         <input
           type="text"
@@ -38,16 +38,16 @@ export default function InputForm({ onSubmit }: Props) {
           onChange={(e) => setLocation(e.target.value)}
           placeholder="e.g. Charlottetown, PEI"
           required
-          className="rounded-lg border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 text-sm font-normal outline-none focus:ring-2 focus:ring-blue-500"
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-500"
         />
       </label>
 
-      <label className="flex flex-col gap-1 text-sm font-medium">
+      <label className="flex flex-col gap-2 text-sm font-semibold text-gray-900 dark:text-white">
         Urgency
         <select
           value={urgency}
           onChange={(e) => setUrgency(e.target.value as Urgency)}
-          className="rounded-lg border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 text-sm font-normal outline-none focus:ring-2 focus:ring-blue-500"
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="routine">Routine</option>
           <option value="urgent">Urgent</option>
@@ -55,7 +55,7 @@ export default function InputForm({ onSubmit }: Props) {
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-sm font-medium">
+      <label className="flex flex-col gap-2 text-sm font-semibold text-gray-900 dark:text-white">
         Max radius (km)
         <input
           type="number"
@@ -65,7 +65,7 @@ export default function InputForm({ onSubmit }: Props) {
           value={maxRadiusKm}
           onChange={(e) => setMaxRadiusKm(Number(e.target.value))}
           required
-          className="rounded-lg border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 text-sm font-normal outline-none focus:ring-2 focus:ring-blue-500"
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-500"
         />
       </label>
 
