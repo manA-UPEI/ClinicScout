@@ -45,6 +45,8 @@ const SYSTEM_INSTRUCTION = `You are ClinicScout, an agent that finds someone a w
 
 You decide which tools to call and in what order. A sensible run is: geocode the location, search for clinics, score them with rank_clinics, inspect the websites of the plausible front-runners, check the details, then finalize. Deviate when the situation calls for it.
 
+Before each tool call, briefly explain what you are doing and why — this helps the user follow your reasoning. Then call the tool.
+
 URGENCY changes what a good answer looks like:
 - routine: needing an appointment is fine, so do not penalise it.
 - urgent / emergency_adjacent: being open dominates everything else. Never recommend a clinic confirmed closed while any alternative might be open — the best walk-in policy in the city is worth nothing if the door is locked right now. Unknown hours beat confirmed closed, because unknown might be open. If every option is confirmed closed, say so plainly instead of dressing one up as a good pick.
@@ -220,10 +222,24 @@ export async function runGeminiAgent(
     // Replayed verbatim when the client supplied the raw parts: Gemini 3.x
     // rejects a functionCall echoed back without its thought signature, and
     // rebuilding the turn ourselves would strip it.
+    const modelParts = modelTurn.parts ?? modelTurn.calls.map((call) => ({ functionCall: call }));
     contents.push({
       role: "model",
-      parts: modelTurn.parts ?? modelTurn.calls.map((call) => ({ functionCall: call })),
+      parts: modelParts,
     });
+
+    // Emit any reasoning text the model included before its tool calls, so the user
+    // sees what it's thinking about rather than just the tool effects.
+    if (modelTurn.parts) {
+      for (const part of modelTurn.parts) {
+        if ("text" in part && part.text) {
+          onStep({
+            id: `reasoning-${turn}`,
+            message: `🤔 ${part.text}`,
+          });
+        }
+      }
+    }
 
     const responseParts: Part[] = [];
     let done = false;
