@@ -1,9 +1,10 @@
-import { AgentError, Clinic, Confidence, Coordinates } from "../types";
-import { isOpenNow } from "../openingHours";
-import { calculate_distance } from "./calculateDistance";
-import { classifyClinic } from "./classifyClinic";
-import { USER_AGENT } from "./geocode";
-import { cacheKey, TtlCache } from "./cache";
+import { AgentError } from "../types.ts";
+import type { Clinic, Confidence, Coordinates } from "../types.ts";
+import { isOpenNow } from "../openingHours.ts";
+import { calculate_distance } from "./calculateDistance.ts";
+import { classifyClinic } from "./classifyClinic.ts";
+import { USER_AGENT } from "./geocode.ts";
+import { cacheKey, TtlCache } from "./cache.ts";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 

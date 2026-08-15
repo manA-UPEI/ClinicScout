@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RankedClinic, Urgency } from "@/lib/types";
-import type { ExcludedSpecialty } from "@/lib/runAgent";
+import { AgentReasoning, ExcludedSpecialty, RankedClinic, Urgency } from "@/lib/types";
 import ClinicCard from "./ClinicCard";
 import ActionPanel from "./ActionPanel";
 import EmergencyBanner from "./EmergencyBanner";
@@ -12,16 +11,47 @@ interface Props {
   resolvedLocation: string;
   urgency: Urgency;
   excluded: ExcludedSpecialty[];
+  agentReasoning: AgentReasoning | null;
   onStartOver: () => void;
 }
 
 const ALTERNATIVES_SHOWN = 5;
+
+/**
+ * The agent's own reasoning, presented as reasoning and nothing more.
+ *
+ * Kept visually distinct from the clinic card above it on purpose: the card
+ * shows verified facts, this shows an argument about them. Every field named
+ * in `cited_fields` was checked as confirmed before this recommendation was
+ * accepted (lib/agent/guards.ts), so the two can never contradict each other —
+ * but the user should still be able to see which is which.
+ */
+function AgentRationale({ reasoning }: { reasoning: AgentReasoning }) {
+  return (
+    <div className="mt-3 rounded-xl border border-blue-500/25 bg-blue-500/5 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+        🤖 Agent&apos;s reasoning
+        {reasoning.overrode_ranking && " — overrode the top-scored option"}
+      </p>
+      <p className="mt-1.5 text-sm text-gray-700 dark:text-gray-200">
+        {reasoning.reason}
+      </p>
+      {reasoning.cited_fields.length > 0 && (
+        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Based on confirmed:{" "}
+          {reasoning.cited_fields.map((f) => f.replace(/_/g, " ")).join(", ")}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export default function RecommendationView({
   ranked,
   resolvedLocation,
   urgency,
   excluded,
+  agentReasoning,
   onStartOver,
 }: Props) {
   const [showAll, setShowAll] = useState(false);
@@ -38,6 +68,7 @@ export default function RecommendationView({
 
       <div>
         <ClinicCard clinic={best} variant="best" />
+        {agentReasoning && <AgentRationale reasoning={agentReasoning} />}
         <ActionPanel clinic={best} />
       </div>
 

@@ -1,16 +1,18 @@
-import { search_clinics } from "./tools/searchClinics";
-import { rank_clinics } from "./tools/rankClinics";
-import { geocode } from "./tools/geocode";
-import { inspect_clinic, mergeInspection } from "./tools/inspectClinic";
-import { geminiConfigured } from "./tools/gemini";
-import {
-  AgentError,
+import { search_clinics } from "./tools/searchClinics.ts";
+import { rank_clinics } from "./tools/rankClinics.ts";
+import { geocode } from "./tools/geocode.ts";
+import { inspect_clinic, mergeInspection } from "./tools/inspectClinic.ts";
+import { geminiConfigured } from "./tools/gemini.ts";
+import { AgentError } from "./types.ts";
+import type {
+  AgentRunResult,
   AgentStep,
   Clinic,
+  ExcludedSpecialty,
   InputFormData,
   RankedClinic,
   Urgency,
-} from "./types";
+} from "./types.ts";
 
 // Inspecting every result in a dense city would mean a hundred page fetches and
 // a minute of waiting; the ranking waterfall only ever promotes from the front
@@ -22,20 +24,6 @@ const URGENCY_NOTE: Record<Urgency, string> = {
   urgent: "urgent care, so open-now and walk-in clinics rank first",
   emergency_adjacent: "urgent care, so open-now and walk-in clinics rank first",
 };
-
-export interface ExcludedSpecialty {
-  clinic_name: string;
-  specialty: string;
-}
-
-export interface AgentRunResult {
-  steps: AgentStep[];
-  ranked: RankedClinic[];
-  resolvedLocation: string;
-  urgency: Urgency;
-  /** Specialty listings dropped before ranking, shown so the filter is auditable. */
-  excluded: ExcludedSpecialty[];
-}
 
 function summarizeFindings(ranked: RankedClinic[]): string {
   const openCount = ranked.filter((c) => c.open_now === true).length;
@@ -49,12 +37,14 @@ function summarizeFindings(ranked: RankedClinic[]): string {
   return `⚖️ Comparing availability and ranking options (${details})...`;
 }
 
+type Emit = (step: AgentStep) => void;
+
 async function inspectCandidates(
   clinics: Clinic[],
-  steps: AgentStep[]
+  emit: Emit
 ): Promise<Clinic[]> {
   if (!geminiConfigured()) {
-    steps.push({
+    emit({
       id: "inspect-skipped",
       message:
         "🕵️ Skipping website inspection — no GEMINI_API_KEY set. Unverified details stay Unknown.",
@@ -67,14 +57,14 @@ async function inspectCandidates(
     .slice(0, INSPECT_LIMIT);
 
   if (candidates.length === 0) {
-    steps.push({
+    emit({
       id: "inspect-none",
       message: "🕵️ None of the top matches publish a website to inspect.",
     });
     return clinics;
   }
 
-  steps.push({
+  emit({
     id: "inspect-start",
     message: `🕵️ Reading ${candidates.length} clinic ${candidates.length === 1 ? "website" : "websites"} for walk-in and booking details...`,
   });
@@ -85,7 +75,7 @@ async function inspectCandidates(
   // map would order the transparency log by whichever site responded first.
   const inspected = candidates.map((clinic, i) => {
     const inspection = inspections[i];
-    steps.push({
+    emit({
       id: `inspect-${clinic.source_url}`,
       message:
         inspection.evidence.length > 0
@@ -99,15 +89,28 @@ async function inspectCandidates(
   return clinics.map((c) => byUrl.get(c.source_url) ?? c);
 }
 
-export async function runAgent(input: InputFormData): Promise<AgentRunResult> {
+/**
+ * The original fixed pipeline, kept as the fallback for when the Gemini
+ * orchestrator is unavailable (no key), unreachable, out of quota, or out of
+ * time. Behaviour is unchanged; it now also reports steps as they happen so a
+ * fallback run streams like an agent run does.
+ */
+export async function runDeterministicPipeline(
+  input: InputFormData,
+  onStep: (step: AgentStep) => void = () => {}
+): Promise<AgentRunResult> {
   const steps: AgentStep[] = [];
+  const emit: Emit = (step) => {
+    steps.push(step);
+    onStep(step);
+  };
 
   const place = await geocode(input.location);
-  steps.push({
+  emit({
     id: "geocode",
     message: `📍 Resolved "${input.location}" to ${place.display_name}.`,
   });
-  steps.push({
+  emit({
     id: "search",
     message: `🔍 Searching for clinics within ${input.maxRadiusKm} km (${URGENCY_NOTE[input.urgency]})...`,
   });
@@ -123,14 +126,14 @@ export async function runAgent(input: InputFormData): Promise<AgentRunResult> {
   if (stale) {
     // The directory failed live, so this is our own cached copy — say so
     // rather than presenting it as a fresh lookup.
-    steps.push({
+    emit({
       id: "stale",
       message:
         "⚠️ The clinic directory didn't respond — showing the most recent results we have, which may be a little out of date.",
     });
   }
 
-  steps.push({
+  emit({
     id: "found",
     message: `Found ${clinics.length} ${clinics.length === 1 ? "clinic" : "clinics"}.`,
   });
@@ -147,7 +150,7 @@ export async function runAgent(input: InputFormData): Promise<AgentRunResult> {
     }));
 
   if (excluded.length > 0) {
-    steps.push({
+    emit({
       id: "filter",
       message: `🧹 Set aside ${excluded.length} specialty ${excluded.length === 1 ? "listing" : "listings"} that don't treat general walk-in complaints.`,
     });
@@ -163,11 +166,11 @@ export async function runAgent(input: InputFormData): Promise<AgentRunResult> {
   // Rank on directory data first so inspection spends its budget on the
   // clinics that could plausibly win, then rank again on what the sites said.
   const shortlist = rank_clinics(eligible, input.urgency);
-  const enriched = await inspectCandidates(shortlist, steps);
+  const enriched = await inspectCandidates(shortlist, emit);
   const ranked = rank_clinics(enriched, input.urgency);
 
-  steps.push({ id: "compare", message: summarizeFindings(ranked) });
-  steps.push({
+  emit({ id: "compare", message: summarizeFindings(ranked) });
+  emit({
     id: "recommend",
     message: `🏆 Recommendation ready: ${ranked[0].clinic_name}.`,
   });
@@ -178,5 +181,7 @@ export async function runAgent(input: InputFormData): Promise<AgentRunResult> {
     resolvedLocation: place.display_name,
     urgency: input.urgency,
     excluded,
+    mode: "deterministic",
+    agentReasoning: null,
   };
 }

@@ -1,4 +1,4 @@
-import { Coordinates } from "../types";
+import type { Coordinates } from "../types.ts";
 
 const EARTH_RADIUS_KM = 6371;
 

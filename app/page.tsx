@@ -6,8 +6,8 @@ import AgentProgress from "@/components/AgentProgress";
 import RecommendationView from "@/components/RecommendationView";
 import SearchingState from "@/components/SearchingState";
 import ErrorState from "@/components/ErrorState";
-import type { AgentRunResult } from "@/lib/runAgent";
-import { AgentErrorKind, InputFormData } from "@/lib/types";
+import { readSseStream } from "@/lib/sseClient";
+import type { AgentRunResult, AgentErrorKind, AgentStep, InputFormData } from "@/lib/types";
 
 type Phase = "input" | "searching" | "progress" | "recommendation" | "error";
 
@@ -18,30 +18,52 @@ interface ErrorInfo {
 
 export default function Page() {
   const [phase, setPhase] = useState<Phase>("input");
+  const [steps, setSteps] = useState<AgentStep[]>([]);
   const [result, setResult] = useState<AgentRunResult | null>(null);
   const [error, setError] = useState<ErrorInfo | null>(null);
   const [location, setLocation] = useState("");
 
   async function handleSubmit(data: InputFormData) {
     setLocation(data.location);
+    setSteps([]);
+    setResult(null);
     setPhase("searching");
+
     try {
       const response = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      const payload = (await response.json()) as
-        | AgentRunResult
-        | { error: ErrorInfo };
 
-      if ("error" in payload) {
-        setError(payload.error);
+      // Input validation still answers with plain JSON — there is nothing to
+      // stream when the request never starts a run.
+      if (!response.body || !response.headers.get("Content-Type")?.includes("event-stream")) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error: ErrorInfo }
+          | null;
+        setError(
+          payload?.error ?? {
+            kind: "network",
+            message: "The server returned an unexpected response.",
+          }
+        );
         setPhase("error");
         return;
       }
-      setResult(payload);
-      setPhase("progress");
+
+      for await (const event of readSseStream(response.body)) {
+        if (event.event === "step") {
+          setSteps((prev) => [...prev, event.data as AgentStep]);
+          setPhase("progress");
+        } else if (event.event === "result") {
+          setResult(event.data as AgentRunResult);
+        } else if (event.event === "error") {
+          setError(event.data as ErrorInfo);
+          setPhase("error");
+          return;
+        }
+      }
     } catch {
       setError({
         kind: "network",
@@ -54,6 +76,7 @@ export default function Page() {
   function handleStartOver() {
     setResult(null);
     setError(null);
+    setSteps([]);
     setPhase("input");
   }
 
@@ -71,9 +94,10 @@ export default function Page() {
         />
       )}
 
-      {phase === "progress" && result && (
+      {phase === "progress" && (
         <AgentProgress
-          steps={result.steps}
+          steps={steps}
+          done={result !== null}
           onComplete={() => setPhase("recommendation")}
         />
       )}
@@ -84,6 +108,7 @@ export default function Page() {
           resolvedLocation={result.resolvedLocation}
           urgency={result.urgency}
           excluded={result.excluded}
+          agentReasoning={result.agentReasoning}
           onStartOver={handleStartOver}
         />
       )}

@@ -1,4 +1,4 @@
-import { DraftedEmail } from "../types";
+import type { DraftedEmail } from "../types.ts";
 
 export function draft_appointment_email(
   clinic_name: string,

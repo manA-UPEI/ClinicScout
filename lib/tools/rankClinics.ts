@@ -1,6 +1,6 @@
-import { Clinic, RankedClinic, Urgency } from "../types";
-import { relevanceScore } from "./classifyClinic";
-import { hasContactChannel, isDeadEnd } from "./actionability";
+import type { Clinic, RankedClinic, Urgency } from "../types.ts";
+import { relevanceScore } from "./classifyClinic.ts";
+import { hasContactChannel, isDeadEnd } from "./actionability.ts";
 
 // Priority waterfall, evaluated tier by tier so ties correctly fall through
 // to the next criterion instead of collapsing to a single sort key:

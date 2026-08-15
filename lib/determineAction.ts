@@ -1,5 +1,5 @@
-import { ActionCase, Clinic } from "./types";
-import { hasContactChannel } from "./tools/actionability";
+import type { ActionCase, Clinic } from "./types.ts";
+import { hasContactChannel } from "./tools/actionability.ts";
 
 // Next-action routing logic (spec section 4):
 // Case 1: booking_url present -> direct online booking.

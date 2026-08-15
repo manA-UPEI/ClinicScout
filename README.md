@@ -27,16 +27,65 @@ directory data doesn't cover stays "Unknown".
 
 ## How it works
 
-1. **Geocode** the typed location via Nominatim.
-2. **Search** OpenStreetMap (Overpass) for clinics inside the radius.
-3. **Classify** each listing and set aside specialty services.
-4. **Rank** on directory data alone.
-5. **Inspect** the top 5 results that publish a website: fetch the landing page
-   plus up to two same-origin pages likely to carry hours or contact details
-   (a `/hours` or `/contact` page, say), and ask Gemini to extract walk-in
-   policy, appointment rules, hours, capacity, and contact details.
-6. **Re-rank** on the enriched data and recommend a next action (book online,
-   draft an email, or call).
+Gemini runs the search as an **agent**: it decides which tools to call, in what
+order, when to stop, and which clinic to recommend. There is no fixed sequence —
+a thin result set gets a wider radius, an uninformative website gets the next
+candidate inspected instead.
+
+The tools it drives are the same verified ones the app has always used:
+
+| Tool | What it does |
+|---|---|
+| `geocode_location` | Resolve the typed location via Nominatim |
+| `search_clinics` | Query OpenStreetMap (Overpass); specialty listings filtered out |
+| `inspect_clinic_websites` | Fetch and read clinic sites, keeping only quote-verified facts |
+| `rank_clinics` | Score with the deterministic waterfall |
+| `get_clinic_details` | Read the full verified record, evidence quotes included |
+| `finalize_recommendation` | Commit to a pick — validated before it is accepted |
+
+### Gemini decides; it does not get to make things up
+
+Putting a model in charge of a medical lookup is only safe if it cannot author a
+fact. Two rules enforce that, and they are the load-bearing part of the design:
+
+**Full clinic records never enter the model's context.** Tools return compact
+projections plus ids; the real records stay server-side in `RunState`
+([lib/agent/state.ts](lib/agent/state.ts)). The model can point at a clinic, never
+rewrite one. This also keeps a dense city's hundred listings from swamping the
+context window.
+
+**The run ends by selecting an id, not by writing prose.** `finalize_recommendation`
+takes a `clinic_id` and the `cited_fields` its reasoning depends on, and
+[`validateFinalization`](lib/agent/guards.ts) rejects the call if any cited field
+is Unknown for that clinic. The rejection goes back to the model as a tool error,
+so it corrects itself and retries. Its closing argument renders as clearly-labelled
+*reasoning*, next to — never mixed into — the verified fact badges.
+
+So the agent is free to overrule the deterministic ranking, and says so when it
+does; it just cannot justify the overrule with something no source confirmed.
+
+### When the agent cannot answer
+
+No API key, no network, quota exhausted, out of turns, or out of time — the run
+falls back to the original fixed pipeline
+([`runDeterministicPipeline`](lib/runAgent.ts)), and the step log says which
+engine answered and why. If the agent already found clinics before it stopped,
+that work is scored rather than thrown away and re-fetched.
+
+### Watching it think
+
+The run streams over SSE, so each decision appears as it is made rather than
+replaying a canned animation after the fact. An inspection that takes four
+seconds looks like four seconds.
+
+**A note on quota.** The agent spends one model call per turn — five or six per
+search, against the old extractor's one — so API budget is the first thing to run
+out, and the single most likely thing to go wrong in a live demo. Both failure
+modes were hit while building this: a per-model free-tier allowance
+(`gemini-2.5-flash` permits 20 requests/day, about three agent runs) and
+account-level `prepayment credits are depleted`, which no model change works
+around. Either way the run degrades to the pipeline and the step log says so
+rather than failing. See [.env.local.example](.env.local.example).
 
 ## Relevance filtering
 

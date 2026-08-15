@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template, which holds no secrets and which the README tells you
+# to copy. `.env*` was hiding it, so that instruction failed on a fresh clone.
+!.env*.example
 
 # vercel
 .vercel
