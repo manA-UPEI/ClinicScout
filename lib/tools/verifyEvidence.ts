@@ -25,9 +25,19 @@ export const EMPTY_INSPECTION: ClinicInspection = {
   evidence: [],
 };
 
-function normalize(s: string): string {
+/**
+ * Case- and whitespace-insensitive form used for quote matching. HTML-to-text
+ * flattening and speech transcription both mangle whitespace and casing without
+ * changing what was said, so neither should defeat a genuine quote.
+ *
+ * Exported because call transcripts are verified the same way — see
+ * lib/call/verifyTranscript.ts.
+ */
+export function normalizeForMatch(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
 }
+
+const normalize = normalizeForMatch;
 
 /**
  * The model is instructed to cite verbatim, but "instructed" is not

@@ -142,12 +142,21 @@ export async function runDeterministicPipeline(
   // care. Dropping them here is what stops the agent confidently recommending
   // a specialist for a walk-in complaint.
   const eligible = clinics.filter((c) => c.relevance !== "specialty");
-  const excluded: ExcludedSpecialty[] = clinics
-    .filter((c) => c.relevance === "specialty")
-    .map((c) => ({
-      clinic_name: c.clinic_name,
-      specialty: c.specialty ?? "Specialist referral",
-    }));
+
+  // Deduped by name, matching what the agent path already does in
+  // recordSearch (lib/agent/state.ts). Chains list each branch as its own OSM
+  // node, so a dense city sets aside the same name several times — which
+  // showed up as repeated rows in the excluded panel, and as a duplicate React
+  // key, since the panel keys on the name.
+  const excluded: ExcludedSpecialty[] = [];
+  for (const clinic of clinics) {
+    if (clinic.relevance !== "specialty") continue;
+    if (excluded.some((e) => e.clinic_name === clinic.clinic_name)) continue;
+    excluded.push({
+      clinic_name: clinic.clinic_name,
+      specialty: clinic.specialty ?? "Specialist referral",
+    });
+  }
 
   if (excluded.length > 0) {
     emit({

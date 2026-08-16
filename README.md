@@ -116,6 +116,68 @@ The selector changes behaviour rather than decorating the form:
 - **Emergency-adjacent** — ranks as urgent, and the results open with a banner
   telling the user to call 911 rather than travel to a clinic.
 
+## Having the agent call the clinic
+
+The one fact that decides whether a trip is worth making — *are you taking
+walk-ins right now, and how long is the wait* — exists nowhere but in a
+receptionist's head. It is not in OpenStreetMap and it is almost never on the
+website. So the agent can phone and ask.
+
+It **asks and hangs up**. There is no code path by which a call books anything,
+which is why a hallucinated appointment is impossible here rather than merely
+discouraged. What it learns comes back as findings you can act on yourself.
+
+### The transcript is the new page text
+
+Website facts survive only if a verbatim quote backs them. Call facts work the
+same way — with one addition that a document does not need:
+
+> The quote must come from a turn the **clinic** spoke. The agent cannot cite
+> itself.
+
+Half a transcript is the agent's own words. An agent that asks *"so that's about
+forty-five minutes?"* and gets a noncommittal "mhm" could, given the whole
+transcript, quote its own sentence as proof of a forty-five minute wait — a
+number the clinic never said and merely failed to argue with. Building the
+haystack from clinic turns only makes that impossible in code
+([lib/call/verifyTranscript.ts](lib/call/verifyTranscript.ts)).
+
+The visible result: a receptionist who says *"maybe, hard to say"* produces a
+call that confirms **nothing**, and the UI says so. A system that returns "about
+45 minutes" there invented it.
+
+### It says what it is, and says nothing about you
+
+Every call opens with a constant, non-skippable line stating that the caller is
+an AI and the call is transcribed. It is not model-generated and it is always
+first ([lib/call/script.ts](lib/call/script.ts)).
+
+The script has exactly one slot — the clinic's name. There is no slot capable of
+carrying a symptom, a name, or a callback number, so **the clinic learns nothing
+about you**; `Urgency` shapes the ranking and never reaches the conversation.
+That is enforced by the shape of the script rather than by asking a model to
+behave, and `buildScript.length === 1` is asserted in the suite so a later change
+that threads patient detail through fails before it ships.
+
+The agent also withdraws rather than pressing on: a receptionist who says they
+don't take automated calls gets an apology and a hang-up, and a phone tree gets
+hung up on rather than read at.
+
+### Simulated, for now
+
+Calls run against a scripted receptionist — no telephony, no cost, nothing
+dialled — the same honesty the email draft practises by labelling itself
+"(Mock)". Seven personas cover the failure modes a real line actually produces:
+helpful, appointment-only, **vague**, refuses-AI, voicemail, phone tree, and no
+answer.
+
+Everything above the provider boundary is real, so wiring live telephony is an
+adapter (`CallProvider` in
+[lib/call/providers/index.ts](lib/call/providers/index.ts)), not a rewrite. Doing
+so needs more than code: a verified caller ID, a number allowlist, per-call rate
+limits, and a look at the rules on AI-voice calls in the jurisdiction you are
+dialling into. It is deliberately not wired up.
+
 ## Surviving a busy Overpass
 
 The public Overpass instance rate-limits and occasionally 5xx's under load —
