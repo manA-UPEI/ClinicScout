@@ -101,8 +101,11 @@ export default function RecommendationView({
             general walk-in complaints.
           </p>
           <ul className="mt-2 space-y-1">
-            {excluded.map((e) => (
-              <li key={e.clinic_name} className="text-gray-600 dark:text-gray-300">
+            {/* Indexed as well as named: both engines dedupe this list, but a
+                name is not structurally unique and React silently drops
+                duplicate keys rather than complaining where a user would see it. */}
+            {excluded.map((e, i) => (
+              <li key={`${e.clinic_name}-${i}`} className="text-gray-600 dark:text-gray-300">
                 {e.clinic_name}
                 <span className="text-gray-400 dark:text-gray-500">
                   {" "}— {e.specialty}

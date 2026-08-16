@@ -148,6 +148,86 @@ Each check only bites while a genuinely better option exists. If every clinic
 nearby is a dead end, or every one is closed, saying so honestly is the best
 answer available and the agent is left free to give it.
 
+## Agent-placed calls
+
+A second, user-initiated flow that runs after a recommendation: the agent phones
+the clinic and asks whether it is taking walk-ins. It is **inquire-only** — no
+code path commits a booking — and **simulated**, against a scripted receptionist.
+
+It is a separate flow rather than a seventh tool on the search agent for a
+concrete reason: the search loop budgets 40s for an entire run, and a phone call
+is minutes. Calls therefore get their own route, their own session store, and
+their own stream.
+
+```mermaid
+flowchart TD
+    C["CallConsentModal<br/>shows the exact script, requires approval"]
+    R["POST /api/call<br/>rejects without consented: true"]
+    S["createSession<br/>one live call per clinic"]
+    P["CallProvider.place<br/>mock today, Twilio + Gemini Live later"]
+    T["transcript of turns<br/>each tagged agent or clinic"]
+    X["extractFindings<br/>proposes what the clinic said"]
+    V{"quote found in a<br/>CLINIC turn?"}
+    K["finding kept<br/>shown with ✓ and the quote"]
+    U["rejected → renders Unknown"]
+
+    C -->|"user approves"| R --> S --> P
+    P -->|"onTurn, streamed as SSE"| T
+    T --> X --> V
+    V -->|yes| K
+    V -->|no| U
+```
+
+The ordering is the safety property. A provider only ever produces **speech**;
+turning speech into claimed facts, and claimed facts into confirmed ones,
+happens after the line is down, in code the provider cannot influence. No
+adapter — mock or live — can hand back a "finding", only words somebody said.
+
+### Why the haystack excludes the agent's own turns
+
+Half a transcript is the agent talking. An agent that asks a leading question
+("so that's about forty-five minutes?") and receives a grunt could quote its own
+sentence as evidence, converting its guess into a verified fact. Restricting the
+haystack to clinic turns removes the possibility rather than discouraging it —
+the same move the app makes everywhere else it puts a model near a claim.
+
+### Constraints carried by the design
+
+| Concern | Where it is enforced |
+|---|---|
+| Undisclosed AI caller | `DISCLOSURE` is a constant at index 0 of `buildScript`, never model-generated |
+| Patient detail leaking | The script has one slot — the clinic name. `buildScript.length === 1` is asserted in the suite |
+| Booking something unreviewed | No commitment path exists in this phase |
+| Repeated calls to one clinic | `activeSessionFor` — one live session per clinic |
+| A call that never ends | `MAX_CALL_MS`, plus the user's abort, combined into one signal in `runCall` |
+| Mining a voicemail for facts | `buildOutcome` discards all findings unless the status is `completed` |
+
+### Modules
+
+| Module | Role |
+|---|---|
+| [lib/call/types.ts](lib/call/types.ts) | `CallSession`, `CallStatus`, `CallTurn`, findings, and the user-facing status notes |
+| [lib/call/script.ts](lib/call/script.ts) | The bounded script, the disclosure, and the refusal/IVR/voicemail detectors |
+| [lib/call/session.ts](lib/call/session.ts) | Lifecycle state machine and the in-process session store |
+| [lib/call/verifyTranscript.ts](lib/call/verifyTranscript.ts) | The clinic-turns-only firewall and `buildOutcome` |
+| [lib/call/extractFindings.ts](lib/call/extractFindings.ts) | Proposes findings — Gemini when configured, a conservative sentence scan otherwise |
+| [lib/call/runCall.ts](lib/call/runCall.ts) | Drives one call: dial, stream turns, extract, verify, record |
+| [lib/call/providers/index.ts](lib/call/providers/index.ts) | The `CallProvider` interface, shaped for Twilio Media Streams + Gemini Live |
+| [lib/call/providers/mock.ts](lib/call/providers/mock.ts) | Seven scripted receptionists, one per real-world failure mode |
+| [app/api/call/route.ts](app/api/call/route.ts) | POST + SSE; hanging up is the client aborting the fetch, via `request.signal` |
+| [components/CallPanel.tsx](components/CallPanel.tsx) | Owns the flow; renders consent, progress and outcome |
+| [components/CallConsentModal.tsx](components/CallConsentModal.tsx) | Renders the script from the same `buildScript` the call runs, so it cannot drift |
+| [components/CallProgress.tsx](components/CallProgress.tsx) | Live turn-by-turn transcript with a hang-up control |
+| [components/CallOutcomeCard.tsx](components/CallOutcomeCard.tsx) | Findings with ✓ and quote; rejected fields via `FieldValue` |
+
+### Deferred to Phase 2
+
+Live telephony, and the operational gating it requires: a verified caller ID, a
+number allowlist, per-call rate limits, and jurisdiction review of AI-voice
+disclosure rules. A real call also outlives its request, so it needs provider
+webhooks and a durable session store rather than the held-open stream and
+in-memory `Map` used here.
+
 ## Priority waterfall
 
 [lib/tools/rankClinics.ts](lib/tools/rankClinics.ts) compares tier by tier, so a
@@ -266,6 +346,10 @@ than merely incorrect:
 - `openingHours.test.ts` — almost entirely about the parser refusing to guess
 - `verifyEvidence.test.ts` — fabricated and paraphrased quotes dropping their fields
 - `classifyClinic.test.ts` — specialty names beating walk-in names
+- `callTranscript.test.ts` — the call firewall, including a quote lifted from the agent's own turn
+- `callScript.test.ts` — disclosure first, and no slot able to carry patient detail
+- `callSession.test.ts` — lifecycle transitions, hang-up at every live stage, one call per clinic
+- `callMockProvider.test.ts` — each persona's terminal status, and the vague clinic confirming nothing
 - `cache.test.ts`, `fetchPageLinks.test.ts`, `sseClient.test.ts`, `actionability.test.ts`, `agentState.test.ts` — the supporting pure functions
 
 ```bash

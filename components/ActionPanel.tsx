@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Clinic } from "@/lib/types";
 import { determineAction } from "@/lib/determineAction";
 import EmailDraftModal from "./EmailDraftModal";
+import CallPanel from "./CallPanel";
 
 interface Props {
   clinic: Clinic;
@@ -64,6 +65,11 @@ export default function ActionPanel({ clinic }: Props) {
           No contact information available.
         </p>
       )}
+
+      {/* Offered alongside the primary action, not instead of it: the call
+          only establishes whether the trip is worth making — booking, or
+          turning up, is still the user's move. */}
+      <CallPanel clinic={clinic} />
 
       {modalMode && (action.kind === "email_verified" || action.kind === "email_unverified") && (
         <EmailDraftModal
