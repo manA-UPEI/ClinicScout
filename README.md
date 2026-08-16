@@ -3,6 +3,9 @@
 Finds nearby walk-in clinics, reads their websites to verify availability, ranks
 them, and recommends one with a concrete next action.
 
+For the structural view — request lifecycle, where state lives, the module map —
+see [ARCHITECTURE.md](ARCHITECTURE.md). This file covers the reasoning behind it.
+
 ## Getting started
 
 ```bash
