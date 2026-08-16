@@ -39,6 +39,14 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Local planning and scratch notes. Kept on disk, deliberately out of the repo —
+# they were published once by an over-broad `git add -A` and should not be again.
+ANALYSIS.md
+HACKATHON_SUBMISSION.md
+HAPPY_PATH_SCENARIOS.md
+HARD_THINK_SUMMARY.md
+lib/happyPath.test.ts
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
