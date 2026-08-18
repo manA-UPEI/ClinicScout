@@ -8,6 +8,7 @@ import type {
 import { clinicShortId } from "../../domain/entities/clinic.ts";
 import type { AgentReasoning, InputFormData } from "../../domain/entities/agentRun.ts";
 import { hasContactChannel } from "../../domain/policies/actionability.ts";
+import { partitionBySpecialty } from "../../domain/policies/excludeSpecialtyListings.ts";
 
 /**
  * The agent's blackboard.
@@ -78,9 +79,10 @@ export function project(state: RunState, clinic: Clinic): ClinicProjection {
 
 /**
  * Records a search result, splitting specialty listings out the same way the
- * deterministic pipeline does — that filter is a safety rail, not a judgment
- * call, so it stays out of the model's hands (though the counts are reported
- * to it, so it can reason about a thin result set).
+ * deterministic pipeline does (domain/policies/excludeSpecialtyListings.ts)
+ * — that filter is a safety rail, not a judgment call, so it stays out of the
+ * model's hands (though the counts are reported to it, so it can reason
+ * about a thin result set).
  *
  * Enrichment survives re-searching: when self-correction widens the radius, a
  * clinic already inspected keeps its verified fields instead of reverting to
@@ -95,16 +97,10 @@ export function recordSearch(
   state.searchedRadiusKm = radiusKm;
   state.stale = stale;
 
-  for (const clinic of clinics) {
-    if (clinic.relevance === "specialty") {
-      if (!state.excluded.some((e) => e.clinic_name === clinic.clinic_name)) {
-        state.excluded.push({
-          clinic_name: clinic.clinic_name,
-          specialty: clinic.specialty ?? "Specialist referral",
-        });
-      }
-      continue;
-    }
+  const { eligible, excluded } = partitionBySpecialty(clinics, state.excluded);
+  state.excluded = excluded;
+
+  for (const clinic of eligible) {
     const id = shortId(clinic.source_url);
     if (state.inspected.has(id)) continue;
     state.clinics.set(id, clinic);

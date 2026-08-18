@@ -1,11 +1,12 @@
 import { search_clinics } from "./tools/searchClinics.ts";
 import { rank_clinics } from "../domain/policies/rankClinics.ts";
+import { partitionBySpecialty } from "../domain/policies/excludeSpecialtyListings.ts";
 import { geocode } from "./tools/geocode.ts";
 import { inspect_clinic, mergeInspection } from "./tools/inspectClinic.ts";
 import { geminiConfigured } from "./tools/gemini.ts";
 import { AgentError } from "../domain/entities/errors.ts";
 import type { AgentRunResult, AgentStep, InputFormData, Urgency } from "../domain/entities/agentRun.ts";
-import type { Clinic, ExcludedSpecialty, RankedClinic } from "../domain/entities/clinic.ts";
+import type { Clinic, RankedClinic } from "../domain/entities/clinic.ts";
 
 // Inspecting every result in a dense city would mean a hundred page fetches and
 // a minute of waiting; the ranking waterfall only ever promotes from the front
@@ -133,23 +134,9 @@ export async function runDeterministicPipeline(
 
   // OSM lumps fertility labs, LASIK centres and physiotherapists in with urgent
   // care. Dropping them here is what stops the agent confidently recommending
-  // a specialist for a walk-in complaint.
-  const eligible = clinics.filter((c) => c.relevance !== "specialty");
-
-  // Deduped by name, matching what the agent path already does in
-  // recordSearch (lib/agent/state.ts). Chains list each branch as its own OSM
-  // node, so a dense city sets aside the same name several times — which
-  // showed up as repeated rows in the excluded panel, and as a duplicate React
-  // key, since the panel keys on the name.
-  const excluded: ExcludedSpecialty[] = [];
-  for (const clinic of clinics) {
-    if (clinic.relevance !== "specialty") continue;
-    if (excluded.some((e) => e.clinic_name === clinic.clinic_name)) continue;
-    excluded.push({
-      clinic_name: clinic.clinic_name,
-      specialty: clinic.specialty ?? "Specialist referral",
-    });
-  }
+  // a specialist for a walk-in complaint. The same rule the agent path applies
+  // in agentState.ts's recordSearch — see excludeSpecialtyListings.ts.
+  const { eligible, excluded } = partitionBySpecialty(clinics);
 
   if (excluded.length > 0) {
     emit({
