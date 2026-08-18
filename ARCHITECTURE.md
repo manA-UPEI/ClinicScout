@@ -7,6 +7,26 @@ decisions were made — relevance filtering, urgency handling, surviving a busy
 Overpass, reading hours without guessing. This document does not restate those
 arguments; it shows the shape they produced.
 
+## Layering
+
+Code lives under `src/`, split by Clean Architecture layer rather than by
+feature. Dependencies point inward only — `app/`/`components/` may depend on
+`domain/` and on an application use-case's public entry point, `application/`
+depends on `domain/` and on `application/ports/*` (never on a concrete
+`infrastructure/` adapter), and `infrastructure/` implements those ports. An
+ESLint rule (`eslint.config.mjs`) enforces the presentation-layer half of this
+boundary — it fails the build if `components/` or `app/` (outside `app/api/`)
+imports from `infrastructure/` directly.
+
+| Layer | Path | What lives there |
+|---|---|---|
+| Presentation | `src/app/`, `src/components/` | Next.js routes and React components. Route handlers under `app/api/` are the exception allowed to wire in real use-cases and adapters. |
+| Domain | `src/domain/` | Entities, pure policies, and verification logic. No network, no `process.env`, no framework. |
+| Application | `src/application/` | Use-cases that orchestrate domain logic against ports, plus the ports themselves (`application/ports/`). |
+| Infrastructure | `src/infrastructure/` | Concrete adapters — the only layer allowed `fetch`, DNS, or `process.env`. |
+| Interface (transport) | `src/interface/http/` | Small, shared HTTP-framing helpers (the SSE response builder) used by route handlers. |
+| Shared | `src/shared/` | Framework-agnostic code genuinely used by both client and server (SSE frame parsing). |
+
 ## Request lifecycle
 
 A search is one `POST` that stays open as a Server-Sent-Events stream. The client
@@ -18,8 +38,8 @@ sits under three of the four paths out of it.
 
 ```mermaid
 flowchart TD
-    B["Browser · app/page.tsx<br/>phase state machine"]
-    R["app/api/search/route.ts<br/>ReadableStream → SSE: step* then result or error"]
+    B["Browser · src/app/page.tsx<br/>phase state machine"]
+    R["src/app/api/search/route.ts<br/>ReadableStream → SSE: step* then result or error"]
     K{"GEMINI_API_KEY<br/>configured?"}
     A["runGeminiAgent loop<br/>max 10 turns · 40s budget"]
     D["runDeterministicPipeline<br/>geocode → search → rank → inspect → re-rank"]
@@ -61,7 +81,7 @@ either engine can produce anything. The route handler catches it and emits an SS
 The numbers are chained to the deployment ceiling, not picked freely:
 
 - Vercel's Hobby plan kills a function at **60s** — `maxDuration` in
-  [route.ts](app/api/search/route.ts).
+  [route.ts](src/app/api/search/route.ts).
 - The agent loop gives itself **40s**, leaving room to fall back and still answer
   rather than dying mid-stream.
 - **10 turns** max, because each turn is a network round-trip against the
@@ -69,7 +89,7 @@ The numbers are chained to the deployment ceiling, not picked freely:
 
 ## Where state lives
 
-The agent's blackboard is `RunState` ([lib/agent/state.ts](lib/agent/state.ts)),
+The agent's blackboard is `RunState` ([application/search/agentState.ts](src/application/search/agentState.ts)),
 and the boundary around it is the reason a model can be put in charge of a
 medical lookup at all.
 
@@ -106,7 +126,7 @@ flowchart TD
 
     subgraph LB["Lane B — a fact the agent cites to justify a pick"]
         B1["finalize_recommendation<br/>clinic_id + reason + cited_fields"]
-        B2["validateFinalization<br/>lib/agent/guards.ts"]
+        B2["validateFinalization<br/>application/search/citationGuard.ts"]
         BQ{"cited field confirmed,<br/>not null?"}
         BF{"reachable, and not<br/>closed while urgent?"}
         BA["accepted — promoted to rank 1,<br/>reasoning shown as reasoning"]
@@ -126,6 +146,14 @@ not need, because a verified fact can still make for an unusable recommendation.
 A rejection in Lane B is not a crash — it goes back as a `functionResponse` so
 the model can correct the citation and try again, which is a real self-correction
 loop rather than a hard failure.
+
+Both lanes share one primitive — [domain/verification/quoteMatch.ts](src/domain/verification/quoteMatch.ts)'s
+`findVerbatimMatch()` — for "does this quote appear verbatim in one of these
+sources". What differs per lane is what counts as a source: Lane A's whole page
+text, or (for the call flow's parallel firewall, below) only the clinic's own
+turns in a transcript. That distinction is enforced by what each lane
+*constructs and passes in*, not by the shared primitive, so it cannot be
+weakened by sharing code.
 
 ### The usability floor
 
@@ -206,19 +234,21 @@ the same move the app makes everywhere else it puts a model near a claim.
 
 | Module | Role |
 |---|---|
-| [lib/call/types.ts](lib/call/types.ts) | `CallSession`, `CallStatus`, `CallTurn`, findings, and the user-facing status notes |
-| [lib/call/script.ts](lib/call/script.ts) | The bounded script, the disclosure, and the refusal/IVR/voicemail detectors |
-| [lib/call/session.ts](lib/call/session.ts) | Lifecycle state machine and the in-process session store |
-| [lib/call/verifyTranscript.ts](lib/call/verifyTranscript.ts) | The clinic-turns-only firewall and `buildOutcome` |
-| [lib/call/extractFindings.ts](lib/call/extractFindings.ts) | Proposes findings — Gemini when configured, a conservative sentence scan otherwise |
-| [lib/call/runCall.ts](lib/call/runCall.ts) | Drives one call: dial, stream turns, extract, verify, record |
-| [lib/call/providers/index.ts](lib/call/providers/index.ts) | The `CallProvider` interface, shaped for Twilio Media Streams + Gemini Live |
-| [lib/call/providers/mock.ts](lib/call/providers/mock.ts) | Seven scripted receptionists, one per real-world failure mode |
-| [app/api/call/route.ts](app/api/call/route.ts) | POST + SSE; hanging up is the client aborting the fetch, via `request.signal` |
-| [components/CallPanel.tsx](components/CallPanel.tsx) | Owns the flow; renders consent, progress and outcome |
-| [components/CallConsentModal.tsx](components/CallConsentModal.tsx) | Renders the script from the same `buildScript` the call runs, so it cannot drift |
-| [components/CallProgress.tsx](components/CallProgress.tsx) | Live turn-by-turn transcript with a hang-up control |
-| [components/CallOutcomeCard.tsx](components/CallOutcomeCard.tsx) | Findings with ✓ and quote; rejected fields via `FieldValue` |
+| [domain/entities/call.ts](src/domain/entities/call.ts) | `CallSession`, `CallStatus`, `CallTurn`, findings, and the user-facing status notes |
+| [domain/services/callScript.ts](src/domain/services/callScript.ts) | The bounded script, the disclosure, and the refusal/IVR/voicemail detectors |
+| [application/call/callSessionService.ts](src/application/call/callSessionService.ts) | Lifecycle state machine (transition legality, one-call-per-clinic) |
+| [infrastructure/call/inMemoryCallSessionStore.ts](src/infrastructure/call/inMemoryCallSessionStore.ts) | The Map-based storage `callSessionService.ts` depends on |
+| [domain/verification/transcriptEvidence.ts](src/domain/verification/transcriptEvidence.ts) | The clinic-turns-only firewall and `buildOutcome` |
+| [application/call/extractFindingsUseCase.ts](src/application/call/extractFindingsUseCase.ts) | Proposes findings — Gemini when configured, a conservative sentence scan otherwise |
+| [application/call/placeCallUseCase.ts](src/application/call/placeCallUseCase.ts) | Drives one call: dial, stream turns, extract, verify, record |
+| [application/call/parseCallRequest.ts](src/application/call/parseCallRequest.ts) | Request-shape and consent validation, extracted out of the route handler |
+| [application/ports/callProvider.ts](src/application/ports/callProvider.ts) | The `CallProvider` interface, shaped for Twilio Media Streams + Gemini Live |
+| [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts) | Seven scripted receptionists, one per real-world failure mode |
+| [app/api/call/route.ts](src/app/api/call/route.ts) | POST + SSE; hanging up is the client aborting the fetch, via `request.signal` |
+| [components/CallPanel.tsx](src/components/CallPanel.tsx) | Owns the flow; renders consent, progress and outcome |
+| [components/CallConsentModal.tsx](src/components/CallConsentModal.tsx) | Renders the script from the same `buildScript` the call runs, so it cannot drift |
+| [components/CallProgress.tsx](src/components/CallProgress.tsx) | Live turn-by-turn transcript with a hang-up control |
+| [components/CallOutcomeCard.tsx](src/components/CallOutcomeCard.tsx) | Findings with ✓ and quote; rejected fields via `FieldValue` |
 
 ### Deferred to Phase 2
 
@@ -230,7 +260,7 @@ in-memory `Map` used here.
 
 ## Priority waterfall
 
-[lib/tools/rankClinics.ts](lib/tools/rankClinics.ts) compares tier by tier, so a
+[domain/policies/rankClinics.ts](src/domain/policies/rankClinics.ts) compares tier by tier, so a
 tie falls through to the next criterion instead of collapsing into a single sort
 key.
 
@@ -253,70 +283,84 @@ is never a reason to prefer a clinic; it is the absence of one.
 
 ## Module map
 
-### Client
+### Presentation — client
 
 | Module | Role |
 |---|---|
-| [app/page.tsx](app/page.tsx) | Phase state machine — input, searching, progress, recommendation, error; owns the fetch and the SSE read loop |
-| [components/InputForm.tsx](components/InputForm.tsx) | Location, urgency and radius |
-| [components/SearchingState.tsx](components/SearchingState.tsx) | Pre-stream spinner; says so when the directory is slow past 12s |
-| [components/AgentProgress.tsx](components/AgentProgress.tsx) | Live transparency log — one line per streamed step, paced by the run itself |
-| [components/RecommendationView.tsx](components/RecommendationView.tsx) | Best pick, alternatives, agent rationale, set-aside specialty listings |
-| [components/ClinicCard.tsx](components/ClinicCard.tsx) | One clinic, with a ✓ on each field quoted from the clinic's own site |
-| [components/FieldValue.tsx](components/FieldValue.tsx) | The only renderer for a nullable field — `null` always prints "Unknown", never a guessed "No" |
-| [components/ActionPanel.tsx](components/ActionPanel.tsx) | Renders whichever next action `determineAction` selected |
-| [components/EmailDraftModal.tsx](components/EmailDraftModal.tsx) | Editable draft, explicitly mocked — nothing is ever sent |
-| [components/EmergencyBanner.tsx](components/EmergencyBanner.tsx) | Sits above results when the request is emergency-adjacent |
-| [components/ErrorState.tsx](components/ErrorState.tsx) | Renders an `AgentError` by kind, with a retry |
-| [lib/sseClient.ts](lib/sseClient.ts) | Hand-rolled SSE frame parser — `EventSource` cannot issue a POST |
-| [lib/determineAction.ts](lib/determineAction.ts) | Pure routing: book online, verified email, unverified email, call only, or no contact available |
+| [app/page.tsx](src/app/page.tsx) | Phase state machine — input, searching, progress, recommendation, error; owns the search request |
+| [components/InputForm.tsx](src/components/InputForm.tsx) | Location, urgency and radius |
+| [components/SearchingState.tsx](src/components/SearchingState.tsx) | Pre-stream spinner; says so when the directory is slow past 12s |
+| [components/AgentProgress.tsx](src/components/AgentProgress.tsx) | Live transparency log — one line per streamed step, paced by the run itself |
+| [components/RecommendationView.tsx](src/components/RecommendationView.tsx) | Best pick, alternatives, agent rationale, set-aside specialty listings |
+| [components/ClinicCard.tsx](src/components/ClinicCard.tsx) | One clinic, with a ✓ on each field quoted from the clinic's own site |
+| [components/FieldValue.tsx](src/components/FieldValue.tsx) | The only renderer for a nullable field — `null` always prints "Unknown", never a guessed "No" |
+| [components/ActionPanel.tsx](src/components/ActionPanel.tsx) | Renders whichever next action `determineAction` selected |
+| [components/EmailDraftModal.tsx](src/components/EmailDraftModal.tsx) | Editable draft, explicitly mocked — nothing is ever sent |
+| [components/EmergencyBanner.tsx](src/components/EmergencyBanner.tsx) | Sits above results when the request is emergency-adjacent |
+| [components/ErrorState.tsx](src/components/ErrorState.tsx) | Renders an `AgentError` by kind, with a retry |
+| [components/hooks/useStreamedSse.ts](src/components/hooks/useStreamedSse.ts) | Owns one POST-and-stream-SSE request's `AbortController`; used by both the search flow and `CallPanel` |
+| [shared/sse/postAndStream.ts](src/shared/sse/postAndStream.ts) | The framework-agnostic fetch + content-type check + SSE read loop the hook wraps |
+| [shared/sse/sseFrame.ts](src/shared/sse/sseFrame.ts) | Hand-rolled SSE frame parser — `EventSource` cannot issue a POST |
+| [domain/policies/determineAction.ts](src/domain/policies/determineAction.ts) | Pure routing: book online, verified email, unverified email, call only, or no contact available |
 
-### API
-
-| Module | Role |
-|---|---|
-| [app/api/search/route.ts](app/api/search/route.ts) | The single POST endpoint; opens the stream and emits `step`, `result` and `error` events |
-
-### Orchestration
+### Interface — API
 
 | Module | Role |
 |---|---|
-| [lib/agent/index.ts](lib/agent/index.ts) | `runClinicSearch()` — picks the engine and always announces which one answered |
-| [lib/runAgent.ts](lib/runAgent.ts) | `runDeterministicPipeline()` — the fixed pipeline, also the fallback |
+| [app/api/search/route.ts](src/app/api/search/route.ts) | Thin controller: parse → validate shape → `runClinicSearch` → SSE-frame events |
+| [interface/http/sseResponse.ts](src/interface/http/sseResponse.ts) | Shared `ReadableStream`/encoder/abort-listener/close boilerplate for both SSE routes |
+| [interface/http/errors.ts](src/interface/http/errors.ts) | Shared JSON error responder |
 
-### Agent internals
-
-| Module | Role |
-|---|---|
-| [lib/agent/runGeminiAgent.ts](lib/agent/runGeminiAgent.ts) | The turn loop: system instruction, budget, turn cap, one nudge to finalize, salvage on early exit |
-| [lib/agent/toolRegistry.ts](lib/agent/toolRegistry.ts) | The six callable tools, their declarations, and server-side clamps such as the radius ceiling |
-| [lib/agent/state.ts](lib/agent/state.ts) | `RunState` blackboard and the projection boundary |
-| [lib/agent/guards.ts](lib/agent/guards.ts) | `validateFinalization()` — the citation check and the usability floor |
-| [lib/gemini/functionCall.ts](lib/gemini/functionCall.ts) | Gemini function-calling client; replays model parts verbatim to preserve thought signatures |
-
-### Domain tools
+### Application — search orchestration
 
 | Module | Role |
 |---|---|
-| [lib/tools/geocode.ts](lib/tools/geocode.ts) | Nominatim lookup |
-| [lib/tools/searchClinics.ts](lib/tools/searchClinics.ts) | Overpass query with retry and backoff; 24h cache that serves stale data rather than failing |
-| [lib/tools/classifyClinic.ts](lib/tools/classifyClinic.ts) | Tiers a listing `walk_in` / `general` / `specialty` / `unknown` — downgrades only on positive evidence |
-| [lib/tools/calculateDistance.ts](lib/tools/calculateDistance.ts) | Great-circle distance, labelled straight-line rather than routing |
-| [lib/tools/rankClinics.ts](lib/tools/rankClinics.ts) | The waterfall above, plus the per-clinic rationale text |
-| [lib/tools/inspectClinic.ts](lib/tools/inspectClinic.ts) | Runs one website's extraction, verification, caching and merge back into the record |
-| [lib/tools/fetchPage.ts](lib/tools/fetchPage.ts) | SSRF-guarded fetch, HTML-to-text, same-origin link discovery for hours and contact pages |
-| [lib/tools/gemini.ts](lib/tools/gemini.ts) | Single-shot structured-JSON extraction client; returns `null` on any failure |
-| [lib/tools/verifyEvidence.ts](lib/tools/verifyEvidence.ts) | Quote verification, plus the separate gate on translated opening hours |
-| [lib/tools/actionability.ts](lib/tools/actionability.ts) | `hasContactChannel` / `isLocatable` / `isDeadEnd` — shared by the ranking, the guards and the UI, so "we can contact this clinic" never means two different things |
-| [lib/tools/cache.ts](lib/tools/cache.ts) | TTL cache with an injectable clock and a deliberate stale read |
-| [lib/tools/draftAppointmentEmail.ts](lib/tools/draftAppointmentEmail.ts) | Pure template function |
-| [lib/openingHours.ts](lib/openingHours.ts) | Conservative OSM `opening_hours` parser — unsupported syntax returns `null`, never a guess |
+| [application/search/runClinicSearchUseCase.ts](src/application/search/runClinicSearchUseCase.ts) | `runClinicSearch()` — picks the engine and always announces which one answered |
+| [application/search/runDeterministicPipelineUseCase.ts](src/application/search/runDeterministicPipelineUseCase.ts) | `runDeterministicPipeline()` — the fixed pipeline, also the fallback |
+| [application/search/runGeminiAgentUseCase.ts](src/application/search/runGeminiAgentUseCase.ts) | The turn loop: system instruction, budget, turn cap, one nudge to finalize, salvage on early exit |
+| [application/search/agentState.ts](src/application/search/agentState.ts) | `RunState` blackboard and the projection boundary |
+| [application/search/citationGuard.ts](src/application/search/citationGuard.ts) | `validateFinalization()` — the citation check and the usability floor |
+| [application/search/inspectClinicUseCase.ts](src/application/search/inspectClinicUseCase.ts) | Runs one website's extraction, verification, caching and merge back into the record |
+| [application/search/tools/index.ts](src/application/search/tools/index.ts) | `AGENT_TOOLS`, `TOOL_DECLARATIONS`, `executeTool` |
+| [application/search/tools/*.ts](src/application/search/tools/) | One file per tool (`geocodeTool`, `searchTool`, `inspectTool`, `rankTool`, `detailsTool`, `finalizeTool`), plus `shared.ts` (common types/helpers) and `stepMessages.ts` (the two step-log formatters complex enough to be worth naming) |
 
-### Shared
+### Application — ports
 
 | Module | Role |
 |---|---|
-| [lib/types.ts](lib/types.ts) | `Clinic`, `RankedClinic`, `AgentStep`, `AgentReasoning`, `AgentRunResult`, `AgentError` — shared across client and server |
+| [application/ports/*.ts](src/application/ports/) | `Geocoder`, `ClinicDirectory`, `WebsiteFetcher`, `JsonExtractionModel`, `FunctionCallingModel`, `CallProvider`, `CallSessionStore`, `ConfigProvider`, `Clock` — the seams infrastructure adapters implement |
+
+### Domain — entities, policies, verification
+
+| Module | Role |
+|---|---|
+| [domain/entities/clinic.ts](src/domain/entities/clinic.ts) | `Clinic`, `RankedClinic`, `ClinicInspection`, `Evidence`, `clinicShortId` |
+| [domain/entities/agentRun.ts](src/domain/entities/agentRun.ts) | `AgentStep`, `AgentReasoning`, `AgentRunResult`, `ActionCase`, `InputFormData` |
+| [domain/entities/errors.ts](src/domain/entities/errors.ts) | `AgentError` |
+| [domain/entities/call.ts](src/domain/entities/call.ts) | Call-flow entities (see Agent-placed calls, above) |
+| [domain/policies/classifyClinic.ts](src/domain/policies/classifyClinic.ts) | Tiers a listing `walk_in` / `general` / `specialty` / `unknown` — downgrades only on positive evidence |
+| [domain/policies/calculateDistance.ts](src/domain/policies/calculateDistance.ts) | Great-circle distance, labelled straight-line rather than routing |
+| [domain/policies/rankClinics.ts](src/domain/policies/rankClinics.ts) | The waterfall above, plus the per-clinic rationale text |
+| [domain/policies/actionability.ts](src/domain/policies/actionability.ts) | `hasContactChannel` / `isLocatable` / `isDeadEnd` — shared by the ranking, the guards and the UI |
+| [domain/policies/excludeSpecialtyListings.ts](src/domain/policies/excludeSpecialtyListings.ts) | `partitionBySpecialty` — the specialty-exclusion rule shared by the agent path and the deterministic pipeline |
+| [domain/policies/openingHours.ts](src/domain/policies/openingHours.ts) | Conservative OSM `opening_hours` parser — unsupported syntax returns `null`, never a guess |
+| [domain/services/draftAppointmentEmail.ts](src/domain/services/draftAppointmentEmail.ts) | Pure template function |
+| [domain/verification/quoteMatch.ts](src/domain/verification/quoteMatch.ts) | `findVerbatimMatch` — the primitive both fact-firewall lanes share |
+| [domain/verification/pageEvidence.ts](src/domain/verification/pageEvidence.ts) | Quote verification against a fetched page, plus the separate gate on translated opening hours |
+
+### Infrastructure — adapters
+
+| Module | Role |
+|---|---|
+| [infrastructure/geo/nominatimGeocoder.ts](src/infrastructure/geo/nominatimGeocoder.ts) | Nominatim lookup; implements `Geocoder` |
+| [infrastructure/geo/overpassClinicDirectory.ts](src/infrastructure/geo/overpassClinicDirectory.ts) | Overpass query with retry and backoff; 24h cache that serves stale data rather than failing; implements `ClinicDirectory` |
+| [infrastructure/web/httpWebsiteFetcher.ts](src/infrastructure/web/httpWebsiteFetcher.ts) | SSRF-guarded fetch, HTML-to-text, same-origin link discovery; implements `WebsiteFetcher` |
+| [infrastructure/llm/geminiHttpClient.ts](src/infrastructure/llm/geminiHttpClient.ts) | Shared POST/timeout/error-classification transport used by both Gemini adapters below |
+| [infrastructure/llm/geminiJsonClient.ts](src/infrastructure/llm/geminiJsonClient.ts) | Single-shot structured-JSON extraction; implements `JsonExtractionModel`; returns `null` on any failure |
+| [infrastructure/llm/geminiFunctionCallClient.ts](src/infrastructure/llm/geminiFunctionCallClient.ts) | Function-calling client; implements `FunctionCallingModel`; replays model parts verbatim to preserve thought signatures |
+| [infrastructure/cache/ttlCache.ts](src/infrastructure/cache/ttlCache.ts) | TTL cache with an injectable clock and a deliberate stale read |
+| [infrastructure/config/env.ts](src/infrastructure/config/env.ts) | The one place `GEMINI_API_KEY`/`GEMINI_MODEL` are read from `process.env`; implements `ConfigProvider` |
+| [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts), [inMemoryCallSessionStore.ts](src/infrastructure/call/inMemoryCallSessionStore.ts) | Call subsystem adapters (see Agent-placed calls, above) |
 
 ## External services
 
@@ -333,24 +377,26 @@ upstream services off the client's origin entirely.
 
 ## Testing
 
-`lib/*.test.ts`, run with `node --test`. No network access — the agent loop takes
-`callModel` and `runTool` as parameters precisely so a whole run can be driven
-from a scripted transcript without a key.
+`src/**/*.test.ts`, colocated beside the source each file tests, run with
+`node --test`. No network access — the agent loop takes `callModel` and
+`runTool` as parameters precisely so a whole run can be driven from a scripted
+transcript without a key.
 
 Coverage leans toward the places where being wrong would be *dangerous* rather
 than merely incorrect:
 
-- `agentGuards.test.ts` — the citation check and both floors
-- `agentLoop.test.ts` — budget and turn-cap termination, salvage, the finalize nudge
+- `citationGuard.test.ts` — the citation check and both floors
+- `runGeminiAgentUseCase.test.ts` — budget and turn-cap termination, salvage, the finalize nudge
 - `resolveInspection.test.ts` / `mergeInspection.test.ts` — cache-vs-fresh and website-vs-OSM precedence
 - `openingHours.test.ts` — almost entirely about the parser refusing to guess
-- `verifyEvidence.test.ts` — fabricated and paraphrased quotes dropping their fields
+- `pageEvidence.test.ts` — fabricated and paraphrased quotes dropping their fields
 - `classifyClinic.test.ts` — specialty names beating walk-in names
-- `callTranscript.test.ts` — the call firewall, including a quote lifted from the agent's own turn
+- `transcriptEvidence.test.ts` — the call firewall, including a quote lifted from the agent's own turn
 - `callScript.test.ts` — disclosure first, and no slot able to carry patient detail
-- `callSession.test.ts` — lifecycle transitions, hang-up at every live stage, one call per clinic
-- `callMockProvider.test.ts` — each persona's terminal status, and the vague clinic confirming nothing
-- `cache.test.ts`, `fetchPageLinks.test.ts`, `sseClient.test.ts`, `actionability.test.ts`, `agentState.test.ts` — the supporting pure functions
+- `callSessionService.test.ts` — lifecycle transitions, hang-up at every live stage, one call per clinic
+- `mockCallProvider.test.ts` — each persona's terminal status, and the vague clinic confirming nothing
+- `excludeSpecialtyListings.test.ts` — the agent path and the deterministic pipeline agreeing on the same duplicate-chain input
+- `ttlCache.test.ts`, `fetchPageLinks.test.ts`, `sseFrame.test.ts`, `actionability.test.ts`, `agentState.test.ts` — the supporting pure functions
 
 ```bash
 npm test
