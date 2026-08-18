@@ -25,6 +25,14 @@ jobs:
 
       - run: npm ci
 
+      # Build first, not last: layout.tsx uses Next's generated LayoutProps
+      # type, which only exists once `next build` (or `next dev`) has run at
+      # least once and written .next/types/. A typecheck-before-build order
+      # only worked locally because .next/types was already warm from
+      # earlier dev/build runs — a fresh CI checkout has no such thing.
+      - name: Build
+        run: npm run build
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -33,9 +41,6 @@ jobs:
 
       - name: Unit tests
         run: npm test
-
-      - name: Build
-        run: npm run build
 
   e2e:
     name: End-to-end (Playwright)
