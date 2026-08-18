@@ -1,6 +1,6 @@
 import { extractFindings } from "./extractFindings.ts";
 import { appendTurn, MAX_CALL_MS, recordOutcome, transition } from "./session.ts";
-import { buildOutcome } from "./verifyTranscript.ts";
+import { buildOutcome } from "../../domain/verification/transcriptEvidence.ts";
 import type { CallProvider } from "./providers/index.ts";
 import type { CallOutcome, CallSession, CallStatus, CallTurn } from "./types.ts";
 

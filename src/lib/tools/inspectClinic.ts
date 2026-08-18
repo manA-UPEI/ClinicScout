@@ -9,7 +9,7 @@ import {
   gateOpeningHoursOsm,
   INSPECTABLE_FIELDS,
   verifyAgainstPage,
-} from "./verifyEvidence.ts";
+} from "../../domain/verification/pageEvidence.ts";
 import { TtlCache } from "./cache.ts";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;

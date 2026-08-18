@@ -1,5 +1,8 @@
-import type { ClinicInspection, Evidence, InspectableField } from "../../domain/entities/clinic.ts";
-import { isValidOpeningHours } from "../../domain/policies/openingHours.ts";
+import type { ClinicInspection, Evidence, InspectableField } from "../entities/clinic.ts";
+import { isValidOpeningHours } from "../policies/openingHours.ts";
+import { findVerbatimMatch, normalizeForMatch } from "./quoteMatch.ts";
+
+export { normalizeForMatch };
 
 export const INSPECTABLE_FIELDS: InspectableField[] = [
   "current_capacity",
@@ -26,20 +29,6 @@ export const EMPTY_INSPECTION: ClinicInspection = {
 };
 
 /**
- * Case- and whitespace-insensitive form used for quote matching. HTML-to-text
- * flattening and speech transcription both mangle whitespace and casing without
- * changing what was said, so neither should defeat a genuine quote.
- *
- * Exported because call transcripts are verified the same way — see
- * lib/call/verifyTranscript.ts.
- */
-export function normalizeForMatch(s: string): string {
-  return s.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-const normalize = normalizeForMatch;
-
-/**
  * The model is instructed to cite verbatim, but "instructed" is not
  * "guaranteed". Every quote is checked against the page before its field is
  * trusted, so a fabricated or paraphrased citation drops the field back to
@@ -49,7 +38,6 @@ export function verifyAgainstPage(
   raw: Partial<ClinicInspection>,
   pageText: string
 ): ClinicInspection {
-  const haystack = normalize(pageText);
   const supported = new Set<InspectableField>();
   const evidence: Evidence[] = [];
 
@@ -60,9 +48,8 @@ export function verifyAgainstPage(
     if (value === null || value === undefined || value === "") continue;
     if (supported.has(entry.field)) continue;
 
-    const needle = normalize(entry.quote);
-    // Snippets this short match incidentally and verify nothing.
-    if (needle.length < 4 || !haystack.includes(needle)) continue;
+    const match = findVerbatimMatch(entry.quote, [{ key: entry.field, text: pageText }]);
+    if (!match) continue;
 
     supported.add(entry.field);
     evidence.push({ field: entry.field, quote: entry.quote.trim() });

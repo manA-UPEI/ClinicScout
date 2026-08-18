@@ -6,7 +6,7 @@ import { geocode } from "../tools/geocode.ts";
 import { search_clinics } from "../tools/searchClinics.ts";
 import { rank_clinics } from "../../domain/policies/rankClinics.ts";
 import { inspect_clinic, mergeInspection } from "../tools/inspectClinic.ts";
-import { validateFinalization } from "./guards.ts";
+import { validateFinalization } from "../../application/search/citationGuard.ts";
 import {
   eligibleClinics,
   getClinic,

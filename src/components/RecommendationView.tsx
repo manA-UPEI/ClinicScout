@@ -24,7 +24,7 @@ const ALTERNATIVES_SHOWN = 5;
  * Kept visually distinct from the clinic card above it on purpose: the card
  * shows verified facts, this shows an argument about them. Every field named
  * in `cited_fields` was checked as confirmed before this recommendation was
- * accepted (lib/agent/guards.ts), so the two can never contradict each other —
+ * accepted (application/search/citationGuard.ts), so the two can never contradict each other —
  * but the user should still be able to see which is which.
  */
 function AgentRationale({ reasoning }: { reasoning: AgentReasoning }) {

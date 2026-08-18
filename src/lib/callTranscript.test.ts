@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildOutcome,
   verifyAgainstTranscript,
-} from "./call/verifyTranscript.ts";
+} from "../domain/verification/transcriptEvidence.ts";
 import type { CallTurn } from "./call/types.ts";
 
 const TRANSCRIPT: CallTurn[] = [

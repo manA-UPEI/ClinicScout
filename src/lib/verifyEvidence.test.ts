@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gateOpeningHoursOsm, verifyAgainstPage } from "./tools/verifyEvidence.ts";
+import { gateOpeningHoursOsm, verifyAgainstPage } from "../domain/verification/pageEvidence.ts";
 
 const PAGE =
   "Riverside Walk-In Clinic. Walk-ins are welcome, no appointment needed. " +

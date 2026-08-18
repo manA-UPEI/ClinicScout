@@ -31,7 +31,7 @@ export type CallStatus =
 /**
  * One utterance. `speaker` is load-bearing rather than cosmetic: verification
  * builds its haystack from clinic turns only, so the agent cannot quote itself
- * into a fact. See lib/call/verifyTranscript.ts.
+ * into a fact. See domain/verification/transcriptEvidence.ts.
  */
 export interface CallTurn {
   speaker: "agent" | "clinic";
