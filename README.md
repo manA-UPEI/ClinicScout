@@ -249,12 +249,45 @@ Known limits, stated plainly:
   reviewable.
 - OSM data can be stale or incomplete. The UI says to call ahead.
 
+## Deploying
+
+Everything about this app assumes Vercel — the `maxDuration = 60` budgets in
+both route handlers exist because that is Vercel's Hobby-plan ceiling on a
+function.
+
+**Set `GEMINI_API_KEY`** as a Vercel environment variable, the same key as
+local dev.
+
+**Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`** before
+sending it any real traffic. Without them, three things quietly degrade the
+moment Vercel runs more than one instance of the app at once, which it will
+under concurrent load — none of them error, they just work less well than
+they look like they should:
+
+- the search-results and website-inspection caches stop being shared across
+  instances, so more requests than necessary hit Overpass and Gemini for real
+- the per-IP rate limiter on `/api/search` and `/api/call` lets through more
+  than its stated limit, since each instance counts independently
+- the one-call-per-clinic rail on agent-placed calls can be bypassed
+
+A free [Upstash](https://upstash.com) Redis database is enough to fix all
+three at once: create one, copy its REST URL and token into those two
+variables, redeploy — `createCache.ts`, `createCallSessionStore.ts`, and
+`createRateLimiter.ts` all switch over automatically, no other change needed.
+
+**Confirm it actually took**: `GET /api/health` reports `sharedStateBackend`
+as `"redis"` once the variables are live. If it still says `"memory"` after
+setting them, they never made it into the deployment — Vercel needs a
+redeploy to pick up new environment variables, it will not hot-reload them
+into an instance that is already running.
+
 ## Scripts
 
 ```bash
 npm run dev        # dev server
 npm run typecheck  # tsc --noEmit
 npm test           # node --test over src/**/*.test.ts
+npm run test:e2e   # Playwright, against a mocked backend — see ARCHITECTURE.md
 npm run lint
 ```
 

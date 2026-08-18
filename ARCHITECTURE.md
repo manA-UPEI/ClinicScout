@@ -301,6 +301,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [components/ActionPanel.tsx](src/components/ActionPanel.tsx) | Renders whichever next action `determineAction` selected |
 | [components/EmailDraftModal.tsx](src/components/EmailDraftModal.tsx) | Editable draft, explicitly mocked — nothing is ever sent |
 | [components/EmergencyBanner.tsx](src/components/EmergencyBanner.tsx) | Sits above results when the request is emergency-adjacent |
+| [components/Footer.tsx](src/components/Footer.tsx) | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished; the emergency-services and search-location-privacy disclaimer |
 | [components/ErrorState.tsx](src/components/ErrorState.tsx) | Renders an `AgentError` by kind, with a retry |
 | [components/hooks/useStreamedSse.ts](src/components/hooks/useStreamedSse.ts) | Owns one POST-and-stream-SSE request's `AbortController`; used by both the search flow and `CallPanel` |
 | [shared/sse/postAndStream.ts](src/shared/sse/postAndStream.ts) | The framework-agnostic fetch + content-type check + SSE read loop the hook wraps |
@@ -312,8 +313,11 @@ is never a reason to prefer a clinic; it is the absence of one.
 | Module | Role |
 |---|---|
 | [app/api/search/route.ts](src/app/api/search/route.ts) | Thin controller: parse → validate shape → `runClinicSearch` → SSE-frame events |
+| [app/api/health/route.ts](src/app/api/health/route.ts) | Reports configuration (Gemini configured, shared-state backend) for an external uptime check — not a live ping of every upstream |
 | [interface/http/sseResponse.ts](src/interface/http/sseResponse.ts) | Shared `ReadableStream`/encoder/abort-listener/close boilerplate for both SSE routes |
 | [interface/http/errors.ts](src/interface/http/errors.ts) | Shared JSON error responder |
+| [interface/http/requestId.ts](src/interface/http/requestId.ts) | One id per request, carried in every error payload and its matching `console.error` line — the thing that makes a user-reported failure findable in logs |
+| [interface/http/clientIp.ts](src/interface/http/clientIp.ts) | Best-effort caller identity from `x-forwarded-for`, used to key the rate limiter |
 
 ### Application — search orchestration
 
@@ -367,6 +371,12 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [infrastructure/cache/redisCache.ts](src/infrastructure/cache/redisCache.ts), [redisRestClient.ts](src/infrastructure/cache/redisRestClient.ts) | Redis-backed `Cache<T>` — same stale-read contract, holds across serverless instances; fails open on a transport error |
 | [infrastructure/cache/createCache.ts](src/infrastructure/cache/createCache.ts) | Picks Redis when `UPSTASH_REDIS_REST_URL`/`_TOKEN` are set, else the in-memory cache — used by both cache call sites below |
 | [infrastructure/config/env.ts](src/infrastructure/config/env.ts) | The one place `GEMINI_API_KEY`/`GEMINI_MODEL` are read from `process.env`; implements `ConfigProvider` |
+| [infrastructure/config/redisConfig.ts](src/infrastructure/config/redisConfig.ts) | The one place `UPSTASH_REDIS_REST_URL`/`_TOKEN` are read; used by `createCache.ts`, `createCallSessionStore.ts`, `createRateLimiter.ts`, and `/api/health` |
+| [infrastructure/ratelimit/rateLimiter.ts](src/infrastructure/ratelimit/rateLimiter.ts) | `RateLimiter` — the shape both limiters below implement |
+| [infrastructure/ratelimit/fixedWindowRateLimiter.ts](src/infrastructure/ratelimit/fixedWindowRateLimiter.ts) | In-memory `RateLimiter`; single-process only — the same caveat as `TtlCache` |
+| [infrastructure/ratelimit/redisRateLimiter.ts](src/infrastructure/ratelimit/redisRateLimiter.ts) | Redis-backed `RateLimiter` — one INCR+EXPIRE counter shared across every serverless instance, which the in-memory version can't offer |
+| [infrastructure/ratelimit/createRateLimiter.ts](src/infrastructure/ratelimit/createRateLimiter.ts) | Picks Redis when configured, else the in-memory limiter — used by both `/api/search` and `/api/call` |
+| [infrastructure/logging/logger.ts](src/infrastructure/logging/logger.ts) | Shared pino logger — JSON in production, pretty-printed in dev; every prior `console.error` now logs structured fields (e.g. the request id) instead of interpolating them into a string |
 | [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts) | Call subsystem provider adapter (see Agent-placed calls, above) |
 
 ## External services
@@ -405,8 +415,29 @@ than merely incorrect:
 - `redisCallSessionStore.test.ts` — the SET-NX claim, and a terminal status releasing it for the next call, against a fake transport
 - `redisCache.test.ts` — the stale-read contract and failing open on a transport error, against a fake transport
 - `excludeSpecialtyListings.test.ts` — the agent path and the deterministic pipeline agreeing on the same duplicate-chain input
+- `redisRateLimiter.test.ts` — the INCR+EXPIRE window, and falling back to the full window when a TTL is unexpectedly missing, against a fake transport
 - `ttlCache.test.ts`, `fetchPageLinks.test.ts`, `sseFrame.test.ts`, `actionability.test.ts`, `agentState.test.ts`, `fixedWindowRateLimiter.test.ts` — the supporting pure functions
 
 ```bash
 npm test
+```
+
+### End-to-end
+
+`e2e/*.spec.ts`, run with Playwright, cover what `node --test` structurally
+can't reach: the actual browser wiring — the SSE stream driving `app/page.tsx`'s
+phase state machine, and the call-consent modal. Every test mocks
+`/api/search` and `/api/call` at the network layer (`page.route`) rather than
+hitting Nominatim/Overpass/Gemini for real, for the same no-network reason the
+unit suite takes `callModel`/`runTool` as parameters.
+
+- `search.spec.ts` — steps streaming into a recommendation with a working
+  action button; the location-not-found and rate-limited error phases,
+  including the request-id reference shown for each
+- `call.spec.ts` — the consent modal rendering the actual script from
+  `buildScript()` and being cancellable; a full call streaming a transcript
+  through to a rendered outcome
+
+```bash
+npm run test:e2e
 ```
