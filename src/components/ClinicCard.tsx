@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { InspectableField, RankedClinic, Relevance } from "@/lib/types";
+import { InspectableField, RankedClinic, Relevance } from "@/domain/entities/clinic";
 import { isDeadEnd } from "@/lib/tools/actionability";
 import FieldValue from "./FieldValue";
 

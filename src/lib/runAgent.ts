@@ -3,16 +3,9 @@ import { rank_clinics } from "./tools/rankClinics.ts";
 import { geocode } from "./tools/geocode.ts";
 import { inspect_clinic, mergeInspection } from "./tools/inspectClinic.ts";
 import { geminiConfigured } from "./tools/gemini.ts";
-import { AgentError } from "./types.ts";
-import type {
-  AgentRunResult,
-  AgentStep,
-  Clinic,
-  ExcludedSpecialty,
-  InputFormData,
-  RankedClinic,
-  Urgency,
-} from "./types.ts";
+import { AgentError } from "../domain/entities/errors.ts";
+import type { AgentRunResult, AgentStep, InputFormData, Urgency } from "../domain/entities/agentRun.ts";
+import type { Clinic, ExcludedSpecialty, RankedClinic } from "../domain/entities/clinic.ts";
 
 // Inspecting every result in a dense city would mean a hundred page fetches and
 // a minute of waiting; the ranking waterfall only ever promotes from the front

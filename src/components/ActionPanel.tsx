@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Clinic } from "@/lib/types";
+import { Clinic } from "@/domain/entities/clinic";
 import { determineAction } from "@/lib/determineAction";
 import EmailDraftModal from "./EmailDraftModal";
 import CallPanel from "./CallPanel";

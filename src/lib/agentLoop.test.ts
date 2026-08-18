@@ -5,7 +5,8 @@ import { recordSearch, shortId } from "./agent/state.ts";
 import type { RunState } from "./agent/state.ts";
 import type { ToolOutcome } from "./agent/toolRegistry.ts";
 import type { ModelTurn } from "./gemini/functionCall.ts";
-import type { AgentStep, Clinic, InputFormData } from "./types.ts";
+import type { AgentStep, InputFormData } from "../domain/entities/agentRun.ts";
+import type { Clinic } from "../domain/entities/clinic.ts";
 
 const INPUT: InputFormData = {
   location: "Charlottetown, PEI",

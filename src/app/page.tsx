@@ -7,7 +7,8 @@ import RecommendationView from "@/components/RecommendationView";
 import SearchingState from "@/components/SearchingState";
 import ErrorState from "@/components/ErrorState";
 import { readSseStream } from "@/lib/sseClient";
-import type { AgentRunResult, AgentErrorKind, AgentStep, InputFormData } from "@/lib/types";
+import type { AgentRunResult, AgentStep, InputFormData } from "@/domain/entities/agentRun";
+import type { AgentErrorKind } from "@/domain/entities/errors";
 
 type Phase = "input" | "searching" | "progress" | "recommendation" | "error";
 

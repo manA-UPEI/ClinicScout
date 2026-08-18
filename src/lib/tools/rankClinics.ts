@@ -1,4 +1,5 @@
-import type { Clinic, RankedClinic, Urgency } from "../types.ts";
+import type { Clinic, RankedClinic } from "../../domain/entities/clinic.ts";
+import type { Urgency } from "../../domain/entities/agentRun.ts";
 import { relevanceScore } from "./classifyClinic.ts";
 import { hasContactChannel, isDeadEnd } from "./actionability.ts";
 

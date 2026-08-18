@@ -1,6 +1,6 @@
 import { runClinicSearch } from "@/lib/agent";
-import { AgentError } from "@/lib/types";
-import type { AgentStep } from "@/lib/types";
+import { AgentError } from "@/domain/entities/errors";
+import type { AgentStep } from "@/domain/entities/agentRun";
 
 // The agent loop budgets 40s for itself and still needs to answer afterwards.
 // Vercel's Hobby plan caps a function at 60s, which is the real ceiling here.

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { validateFinalization } from "./agent/guards.ts";
 import { createRunState, shortId } from "./agent/state.ts";
 import type { RunState } from "./agent/state.ts";
-import type { Clinic, InputFormData } from "./types.ts";
+import type { Clinic } from "../domain/entities/clinic.ts";
+import type { InputFormData } from "../domain/entities/agentRun.ts";
 
 const INPUT: InputFormData = {
   location: "Charlottetown, PEI",

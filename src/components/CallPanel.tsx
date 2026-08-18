@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { readSseStream } from "@/lib/sseClient";
 import { canAgentCall } from "@/lib/tools/actionability";
 import { shortId } from "@/lib/agent/state";
-import type { Clinic } from "@/lib/types";
+import type { Clinic } from "@/domain/entities/clinic";
 import type { CallOutcome, CallStatus, CallTurn } from "@/lib/call/types";
 import CallConsentModal from "./CallConsentModal";
 import CallProgress from "./CallProgress";

@@ -1,4 +1,5 @@
-import type { ActionCase, Clinic } from "./types.ts";
+import type { ActionCase } from "../domain/entities/agentRun.ts";
+import type { Clinic } from "../domain/entities/clinic.ts";
 import { hasContactChannel } from "./tools/actionability.ts";
 
 // Next-action routing logic (spec section 4):

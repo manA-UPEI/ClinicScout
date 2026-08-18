@@ -1,12 +1,11 @@
 import type {
-  AgentReasoning,
   Clinic,
   Confidence,
   ExcludedSpecialty,
   GeocodedLocation,
-  InputFormData,
   Relevance,
-} from "../types.ts";
+} from "../../domain/entities/clinic.ts";
+import type { AgentReasoning, InputFormData } from "../../domain/entities/agentRun.ts";
 import { hasContactChannel } from "../tools/actionability.ts";
 
 /**

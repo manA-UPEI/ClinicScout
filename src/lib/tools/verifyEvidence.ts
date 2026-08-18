@@ -1,4 +1,4 @@
-import type { ClinicInspection, Evidence, InspectableField } from "../types.ts";
+import type { ClinicInspection, Evidence, InspectableField } from "../../domain/entities/clinic.ts";
 import { isValidOpeningHours } from "../openingHours.ts";
 
 export const INSPECTABLE_FIELDS: InspectableField[] = [

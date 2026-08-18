@@ -1,5 +1,5 @@
-import { AgentError } from "../types.ts";
-import type { GeocodedLocation } from "../types.ts";
+import { AgentError } from "../../domain/entities/errors.ts";
+import type { GeocodedLocation } from "../../domain/entities/clinic.ts";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 

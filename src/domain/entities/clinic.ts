@@ -58,7 +58,7 @@ export interface ClinicInspection {
    * field here, this is not a claim the page states verbatim — it's derived
    * by the model — so it is verified differently: only trusted when
    * `opening_hours` itself is verified AND this string independently parses
-   * via `isValidOpeningHours`. See lib/tools/verifyEvidence.ts.
+   * via `isValidOpeningHours`. See domain/verification/pageEvidence.ts.
    */
   opening_hours_osm: string | null;
   evidence: Evidence[];
@@ -87,33 +87,10 @@ export interface Clinic {
   evidence: Evidence[];
 }
 
-/** One line in the agent progress transparency log. */
-export interface AgentStep {
-  id: string;
-  message: string;
-}
-
 /** A specialty listing dropped before ranking, shown so the filter is auditable. */
 export interface ExcludedSpecialty {
   clinic_name: string;
   specialty: string;
-}
-
-/**
- * The orchestrator's own closing argument for its pick.
- *
- * Advisory narrative only — it is rendered as the agent's reasoning, never as a
- * clinic fact. `cited_fields` is the part with teeth: every field named here was
- * checked against the verified record before the finalization was accepted, so
- * the agent cannot justify a pick with something the clinic never confirmed.
- * See lib/agent/guards.ts.
- */
-export interface AgentReasoning {
-  clinic_id: string;
-  reason: string;
-  cited_fields: InspectableField[];
-  /** True when the agent's pick differs from what rank_clinics scored first. */
-  overrode_ranking: boolean;
 }
 
 /** Result of rank_clinics: clinics in priority order + the reasoning trail per clinic. */
@@ -122,54 +99,18 @@ export interface RankedClinic extends Clinic {
   rationale: string;
 }
 
-/** Which engine produced a result: the Gemini orchestrator, or the fixed pipeline. */
-export type RunMode = "agent" | "deterministic";
-
-export interface AgentRunResult {
-  steps: AgentStep[];
-  ranked: RankedClinic[];
-  resolvedLocation: string;
-  urgency: Urgency;
-  excluded: ExcludedSpecialty[];
-  mode: RunMode;
-  /** Null whenever the deterministic pipeline answered. */
-  agentReasoning: AgentReasoning | null;
-}
-
-/** Which next-action case applies, per the routing logic. */
-export type ActionCase =
-  | { kind: "book_online"; bookingUrl: string }
-  | { kind: "email_verified"; email: string }
-  | { kind: "email_unverified"; email: string }
-  | { kind: "call_only"; phone: string }
-  | { kind: "no_contact_available" };
-
-export interface DraftedEmail {
-  subject_line: string;
-  email_body: string;
-}
-
-export type Urgency = "routine" | "urgent" | "emergency_adjacent";
-
-export interface InputFormData {
-  location: string;
-  urgency: Urgency;
-  maxRadiusKm: number;
-}
-
-export type AgentErrorKind = "location_not_found" | "network" | "no_results";
-
-export class AgentError extends Error {
-  kind: AgentErrorKind;
-
-  // Written out instead of a constructor parameter property: Node's
-  // strip-only TypeScript execution (used by the raw `node --test` runner)
-  // can erase type annotations but not this shorthand, since it also
-  // declares a field — this module now loads as a value import, not just
-  // types, from lib/tools/geocode.ts.
-  constructor(kind: AgentErrorKind, message: string) {
-    super(message);
-    this.kind = kind;
-    this.name = "AgentError";
-  }
+/**
+ * `https://www.openstreetmap.org/node/123` -> `node/123`.
+ *
+ * The full source_url is already a stable unique key, but it repeats 30-odd
+ * characters of boilerplate per clinic in every tool result the model sees.
+ *
+ * Moved verbatim from lib/agent/state.ts (unchanged, bug and all — see the
+ * spawned follow-up task for the `\$` escape defect in the template literal
+ * below, which is a pre-existing correctness bug, not something to silently
+ * fix inside a relocation-only refactor commit).
+ */
+export function clinicShortId(sourceUrl: string): string {
+  const match = sourceUrl.match(/(node|way|relation)\/(\d+)/);
+  return match ? `${match[1]}\${match[2]}` : sourceUrl;
 }

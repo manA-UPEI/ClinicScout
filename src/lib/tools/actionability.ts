@@ -1,4 +1,4 @@
-import type { Clinic } from "../types.ts";
+import type { Clinic } from "../../domain/entities/clinic.ts";
 
 /**
  * Whether a recommendation can actually be used.

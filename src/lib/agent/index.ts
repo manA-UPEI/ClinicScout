@@ -1,4 +1,4 @@
-import type { AgentRunResult, AgentStep, InputFormData } from "../types.ts";
+import type { AgentRunResult, AgentStep, InputFormData } from "../../domain/entities/agentRun.ts";
 import { geminiConfigured } from "../tools/gemini.ts";
 import { createGeminiCallable } from "../gemini/functionCall.ts";
 import { runDeterministicPipeline } from "../runAgent.ts";

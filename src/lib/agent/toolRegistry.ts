@@ -1,5 +1,6 @@
-import { AgentError } from "../types.ts";
-import type { AgentStep, Clinic } from "../types.ts";
+import { AgentError } from "../../domain/entities/errors.ts";
+import type { AgentStep } from "../../domain/entities/agentRun.ts";
+import type { Clinic } from "../../domain/entities/clinic.ts";
 import type { FunctionDeclaration } from "../gemini/functionCall.ts";
 import { geocode } from "../tools/geocode.ts";
 import { search_clinics } from "../tools/searchClinics.ts";

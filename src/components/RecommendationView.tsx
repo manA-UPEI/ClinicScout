@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AgentReasoning, ExcludedSpecialty, RankedClinic, Urgency } from "@/lib/types";
+import { AgentReasoning, Urgency } from "@/domain/entities/agentRun";
+import { ExcludedSpecialty, RankedClinic } from "@/domain/entities/clinic";
 import ClinicCard from "./ClinicCard";
 import ActionPanel from "./ActionPanel";
 import EmergencyBanner from "./EmergencyBanner";

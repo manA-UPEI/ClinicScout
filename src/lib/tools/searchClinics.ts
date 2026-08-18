@@ -1,5 +1,5 @@
-import { AgentError } from "../types.ts";
-import type { Clinic, Confidence, Coordinates } from "../types.ts";
+import { AgentError } from "../../domain/entities/errors.ts";
+import type { Clinic, Confidence, Coordinates } from "../../domain/entities/clinic.ts";
 import { isOpenNow } from "../openingHours.ts";
 import { calculate_distance } from "./calculateDistance.ts";
 import { classifyClinic } from "./classifyClinic.ts";

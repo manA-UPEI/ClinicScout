@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { InputFormData, Urgency } from "@/lib/types";
+import { InputFormData, Urgency } from "@/domain/entities/agentRun";
 
 interface Props {
   onSubmit: (data: InputFormData) => void;

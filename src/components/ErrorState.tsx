@@ -1,4 +1,4 @@
-import { AgentErrorKind } from "@/lib/types";
+import { AgentErrorKind } from "@/domain/entities/errors";
 
 interface Props {
   kind: AgentErrorKind;

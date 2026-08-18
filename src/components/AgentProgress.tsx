@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { AgentStep } from "@/lib/types";
+import { AgentStep } from "@/domain/entities/agentRun";
 
 interface Props {
   steps: AgentStep[];

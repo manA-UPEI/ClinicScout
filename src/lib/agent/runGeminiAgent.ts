@@ -1,9 +1,5 @@
-import type {
-  AgentRunResult,
-  AgentStep,
-  InputFormData,
-  RankedClinic,
-} from "../types.ts";
+import type { AgentRunResult, AgentStep, InputFormData } from "../../domain/entities/agentRun.ts";
+import type { RankedClinic } from "../../domain/entities/clinic.ts";
 import type { Content, ModelCallable, Part } from "../gemini/functionCall.ts";
 import { rank_clinics } from "../tools/rankClinics.ts";
 import { executeTool } from "./toolRegistry.ts";

@@ -8,7 +8,8 @@ import {
   recordSearch,
   shortId,
 } from "./agent/state.ts";
-import type { Clinic, InputFormData } from "./types.ts";
+import type { Clinic } from "../domain/entities/clinic.ts";
+import type { InputFormData } from "../domain/entities/agentRun.ts";
 
 const INPUT: InputFormData = {
   location: "Charlottetown, PEI",

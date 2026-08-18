@@ -1,4 +1,4 @@
-import type { Coordinates } from "../types.ts";
+import type { Coordinates } from "../../domain/entities/clinic.ts";
 
 /**
  * Rounds to ~1.1km of precision so re-typing a location slightly differently,

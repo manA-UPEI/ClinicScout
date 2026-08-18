@@ -5,7 +5,7 @@ import {
   isDeadEnd,
   isLocatable,
 } from "./tools/actionability.ts";
-import type { Clinic } from "./types.ts";
+import type { Clinic } from "../domain/entities/clinic.ts";
 
 function clinic(overrides: Partial<Clinic> = {}): Clinic {
   return {
