@@ -1,4 +1,5 @@
 import type { Coordinates } from "../../domain/entities/clinic.ts";
+import type { Cache } from "./cache.ts";
 
 /**
  * Rounds to ~1.1km of precision so re-typing a location slightly differently,
@@ -11,14 +12,20 @@ export function cacheKey(location: Coordinates, radius_km: number): string {
 }
 
 /**
- * A small in-memory TTL cache. Good enough for a single long-running Node
- * process (`next dev` / `next start`) — there is no shared store across
- * serverless invocations, and this app doesn't run on one.
+ * A small in-memory TTL cache — the fallback `createCache` (./createCache.ts)
+ * hands back when no Redis is configured. Good enough for a single
+ * long-running Node process (`next dev` / a bare `next start`); there is no
+ * shared store across serverless instances or cold starts, which is exactly
+ * what RedisCache (./redisCache.ts) exists to fix once that matters.
+ *
+ * Methods are async to satisfy the shared `Cache<T>` interface even though
+ * the work itself is synchronous, so a call site doesn't change depending on
+ * which implementation backs it.
  *
  * `now` is injectable so freshness can be tested without real timers, the
  * same pattern domain/policies/openingHours.ts uses for its own clock dependency.
  */
-export class TtlCache<T> {
+export class TtlCache<T> implements Cache<T> {
   private store = new Map<string, { value: T; expiresAt: number }>();
   private readonly ttlMs: number;
   private readonly now: () => number;
@@ -32,7 +39,7 @@ export class TtlCache<T> {
   }
 
   /** The value if present and still fresh, else undefined. */
-  get(key: string): T | undefined {
+  async get(key: string): Promise<T | undefined> {
     const entry = this.store.get(key);
     if (!entry || this.now() > entry.expiresAt) return undefined;
     return entry.value;
@@ -43,11 +50,11 @@ export class TtlCache<T> {
    * never set. The fallback for "the upstream service failed and honestly
    * stale data beats no data at all."
    */
-  getStale(key: string): T | undefined {
+  async getStale(key: string): Promise<T | undefined> {
     return this.store.get(key)?.value;
   }
 
-  set(key: string, value: T): void {
+  async set(key: string, value: T): Promise<void> {
     this.store.set(key, { value, expiresAt: this.now() + this.ttlMs });
   }
 }

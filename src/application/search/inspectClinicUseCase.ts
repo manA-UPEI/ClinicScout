@@ -10,7 +10,7 @@ import {
   INSPECTABLE_FIELDS,
   verifyAgainstPage,
 } from "../../domain/verification/pageEvidence.ts";
-import { TtlCache } from "../../infrastructure/cache/ttlCache.ts";
+import { createCache } from "../../infrastructure/cache/createCache.ts";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -20,7 +20,7 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // more importantly — means a request that hits the quota wall mid-run falls
 // back to a fact we genuinely confirmed earlier instead of silently
 // discarding it back to "Unknown".
-const inspectionCache = new TtlCache<ClinicInspection>(CACHE_TTL_MS);
+const inspectionCache = createCache<ClinicInspection>("inspection", CACHE_TTL_MS);
 
 const SCHEMA: ResponseSchema = {
   type: "OBJECT",
@@ -168,15 +168,15 @@ export function resolveInspection(
 export async function inspect_clinic(clinic: Clinic): Promise<ClinicInspection> {
   if (!clinic.website) return EMPTY_INSPECTION;
 
-  const fresh = inspectionCache.get(clinic.website);
+  const fresh = await inspectionCache.get(clinic.website);
   if (fresh) return fresh;
 
   const live = await inspectLive(clinic);
   const { result, shouldCache } = resolveInspection(
     live,
-    inspectionCache.getStale(clinic.website)
+    await inspectionCache.getStale(clinic.website)
   );
-  if (shouldCache) inspectionCache.set(clinic.website, result);
+  if (shouldCache) await inspectionCache.set(clinic.website, result);
   return result;
 }
 
