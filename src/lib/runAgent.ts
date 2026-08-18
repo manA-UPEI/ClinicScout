@@ -3,7 +3,7 @@ import { rank_clinics } from "../domain/policies/rankClinics.ts";
 import { partitionBySpecialty } from "../domain/policies/excludeSpecialtyListings.ts";
 import { geocode } from "./tools/geocode.ts";
 import { inspect_clinic, mergeInspection } from "./tools/inspectClinic.ts";
-import { geminiConfigured } from "./tools/gemini.ts";
+import { geminiConfigured } from "../infrastructure/llm/geminiJsonClient.ts";
 import { AgentError } from "../domain/entities/errors.ts";
 import type { AgentRunResult, AgentStep, InputFormData, Urgency } from "../domain/entities/agentRun.ts";
 import type { Clinic, RankedClinic } from "../domain/entities/clinic.ts";

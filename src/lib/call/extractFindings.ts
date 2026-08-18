@@ -1,5 +1,5 @@
-import { generateJson, geminiConfigured } from "../tools/gemini.ts";
-import type { ResponseSchema } from "../tools/gemini.ts";
+import { generateJson, geminiConfigured } from "../../infrastructure/llm/geminiJsonClient.ts";
+import type { ResponseSchema } from "../../infrastructure/llm/geminiJsonClient.ts";
 import { CALL_FIELDS } from "../../domain/verification/transcriptEvidence.ts";
 import type { CallTurn, ClaimedFinding } from "./types.ts";
 

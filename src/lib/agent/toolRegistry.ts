@@ -1,7 +1,7 @@
 import { AgentError } from "../../domain/entities/errors.ts";
 import type { AgentStep } from "../../domain/entities/agentRun.ts";
 import type { Clinic } from "../../domain/entities/clinic.ts";
-import type { FunctionDeclaration } from "../gemini/functionCall.ts";
+import type { FunctionDeclaration } from "../../infrastructure/llm/geminiFunctionCallClient.ts";
 import { geocode } from "../tools/geocode.ts";
 import { search_clinics } from "../tools/searchClinics.ts";
 import { rank_clinics } from "../../domain/policies/rankClinics.ts";

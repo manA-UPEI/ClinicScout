@@ -1,4 +1,4 @@
-import type { ResponseSchema } from "../../lib/tools/gemini.ts";
+import type { ResponseSchema } from "../../infrastructure/llm/geminiJsonClient.ts";
 
 /** One-shot "extract structured JSON from a prompt" model call. */
 export interface JsonExtractionModel {

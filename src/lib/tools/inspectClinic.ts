@@ -2,8 +2,8 @@ import type { Clinic, ClinicInspection } from "../../domain/entities/clinic.ts";
 import { isOpenNow } from "../../domain/policies/openingHours.ts";
 import { fetchClinicPages } from "./fetchPage.ts";
 import type { FetchedPage } from "./fetchPage.ts";
-import { generateJson } from "./gemini.ts";
-import type { ResponseSchema } from "./gemini.ts";
+import { generateJson } from "../../infrastructure/llm/geminiJsonClient.ts";
+import type { ResponseSchema } from "../../infrastructure/llm/geminiJsonClient.ts";
 import {
   EMPTY_INSPECTION,
   gateOpeningHoursOsm,
