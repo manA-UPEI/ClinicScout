@@ -53,13 +53,13 @@ fact. Two rules enforce that, and they are the load-bearing part of the design:
 
 **Full clinic records never enter the model's context.** Tools return compact
 projections plus ids; the real records stay server-side in `RunState`
-([lib/agent/state.ts](lib/agent/state.ts)). The model can point at a clinic, never
+([application/search/agentState.ts](src/application/search/agentState.ts)). The model can point at a clinic, never
 rewrite one. This also keeps a dense city's hundred listings from swamping the
 context window.
 
 **The run ends by selecting an id, not by writing prose.** `finalize_recommendation`
 takes a `clinic_id` and the `cited_fields` its reasoning depends on, and
-[`validateFinalization`](lib/agent/guards.ts) rejects the call if any cited field
+[`validateFinalization`](src/application/search/citationGuard.ts) rejects the call if any cited field
 is Unknown for that clinic. The rejection goes back to the model as a tool error,
 so it corrects itself and retries. Its closing argument renders as clearly-labelled
 *reasoning*, next to — never mixed into — the verified fact badges.
@@ -71,7 +71,7 @@ does; it just cannot justify the overrule with something no source confirmed.
 
 No API key, no network, quota exhausted, out of turns, or out of time — the run
 falls back to the original fixed pipeline
-([`runDeterministicPipeline`](lib/runAgent.ts)), and the step log says which
+([`runDeterministicPipeline`](src/application/search/runDeterministicPipelineUseCase.ts)), and the step log says which
 engine answered and why. If the agent already found clinics before it stopped,
 that work is scored rather than thrown away and re-fetched.
 
@@ -95,7 +95,7 @@ rather than failing. See [.env.local.example](.env.local.example).
 `amenity=clinic|doctors` covers fertility labs, LASIK centres, optometrists and
 physiotherapists alongside urgent care. Without filtering, the agent will
 confidently recommend a behaviour-therapy clinic to someone with a sore throat —
-which it did, before [`classifyClinic`](lib/tools/classifyClinic.ts) was added.
+which it did, before [`classifyClinic`](src/domain/policies/classifyClinic.ts) was added.
 
 Listings are tiered `walk_in` > `general` > `unknown`, with `specialty` excluded
 from ranking entirely and listed in an expandable panel so the filter is
@@ -140,7 +140,7 @@ forty-five minutes?"* and gets a noncommittal "mhm" could, given the whole
 transcript, quote its own sentence as proof of a forty-five minute wait — a
 number the clinic never said and merely failed to argue with. Building the
 haystack from clinic turns only makes that impossible in code
-([lib/call/verifyTranscript.ts](lib/call/verifyTranscript.ts)).
+([domain/verification/transcriptEvidence.ts](src/domain/verification/transcriptEvidence.ts)).
 
 The visible result: a receptionist who says *"maybe, hard to say"* produces a
 call that confirms **nothing**, and the UI says so. A system that returns "about
@@ -150,7 +150,7 @@ call that confirms **nothing**, and the UI says so. A system that returns "about
 
 Every call opens with a constant, non-skippable line stating that the caller is
 an AI and the call is transcribed. It is not model-generated and it is always
-first ([lib/call/script.ts](lib/call/script.ts)).
+first ([domain/services/callScript.ts](src/domain/services/callScript.ts)).
 
 The script has exactly one slot — the clinic's name. There is no slot capable of
 carrying a symptom, a name, or a callback number, so **the clinic learns nothing
@@ -173,7 +173,7 @@ answer.
 
 Everything above the provider boundary is real, so wiring live telephony is an
 adapter (`CallProvider` in
-[lib/call/providers/index.ts](lib/call/providers/index.ts)), not a rewrite. Doing
+[application/ports/callProvider.ts](src/application/ports/callProvider.ts)), not a rewrite. Doing
 so needs more than code: a verified caller ID, a number allowlist, per-call rate
 limits, and a look at the rules on AI-voice calls in the jurisdiction you are
 dialling into. It is deliberately not wired up.
@@ -210,10 +210,10 @@ translation between the two directly, both halves of the claim are verified
 independently:
 
 - The raw hours text must pass the same verbatim-quote check as every other
-  extracted field ([`verifyEvidence`](lib/tools/verifyEvidence.ts)).
+  extracted field ([`verifyAgainstPage`](src/domain/verification/pageEvidence.ts)).
 - Gemini's own OSM-syntax translation of that text is only trusted if it
   independently parses with the app's strict grammar
-  ([`isValidOpeningHours`](lib/openingHours.ts)) — the same parser that decides
+  ([`isValidOpeningHours`](src/domain/policies/openingHours.ts)) — the same parser that decides
   `open_now` for every OSM-sourced listing.
 
 If either check fails, hours fall back to the display text with no computed
@@ -226,11 +226,11 @@ correctly requires a real calendar this app doesn't have.
 
 The agent must never invent a clinic fact, so unknown values stay `null` all the
 way through and render as an explicit "Unknown" badge via
-[`FieldValue`](components/FieldValue.tsx) — never a guessed "No".
+[`FieldValue`](src/components/FieldValue.tsx) — never a guessed "No".
 
 Model output gets the same treatment. Every extracted field must be accompanied
 by a quote copied verbatim from the page, and
-[`verifyEvidence`](lib/tools/verifyEvidence.ts) checks each quote actually
+[`verifyAgainstPage`](src/domain/verification/pageEvidence.ts) checks each quote actually
 appears in the fetched text before the field is trusted. A fabricated or
 paraphrased citation drops the field back to `null`. Surviving facts are shown in
 the UI with a ✓ and their source quote.
@@ -252,8 +252,9 @@ Known limits, stated plainly:
 ## Scripts
 
 ```bash
-npm run dev     # dev server
-npm test        # node --test over lib/*.test.ts
+npm run dev        # dev server
+npm run typecheck  # tsc --noEmit
+npm test           # node --test over src/**/*.test.ts
 npm run lint
 ```
 
