@@ -1,5 +1,6 @@
 import type { Cache } from "./cache.ts";
 import type { RedisTransport } from "./redisRestClient.ts";
+import { logger } from "../logging/logger.ts";
 
 interface StoredEntry<T> {
   value: T;
@@ -70,7 +71,7 @@ export class RedisCache<T> implements Cache<T> {
     try {
       await this.transport.set(this.fullKey(key), JSON.stringify(entry), retainSeconds);
     } catch (e) {
-      console.error(`RedisCache: failed to write ${this.fullKey(key)}`, e);
+      logger.error({ key: this.fullKey(key), err: e }, "RedisCache: failed to write");
     }
   }
 
@@ -80,7 +81,7 @@ export class RedisCache<T> implements Cache<T> {
       if (!raw) return undefined;
       return JSON.parse(raw) as StoredEntry<T>;
     } catch (e) {
-      console.error(`RedisCache: failed to read ${this.fullKey(key)}`, e);
+      logger.error({ key: this.fullKey(key), err: e }, "RedisCache: failed to read");
       return undefined;
     }
   }

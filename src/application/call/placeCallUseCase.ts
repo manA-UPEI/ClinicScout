@@ -1,6 +1,7 @@
 import { extractFindings } from "./extractFindingsUseCase.ts";
 import { appendTurn, MAX_CALL_MS, recordOutcome, transition } from "./callSessionService.ts";
 import { buildOutcome } from "../../domain/verification/transcriptEvidence.ts";
+import { logger } from "../../infrastructure/logging/logger.ts";
 import type { CallProvider } from "../ports/callProvider.ts";
 import type { CallOutcome, CallSession, CallStatus, CallTurn } from "../../domain/entities/call.ts";
 
@@ -55,7 +56,7 @@ export async function runCall(
       signal
     );
   } catch (e) {
-    console.error(`Call provider ${provider.name} failed:`, e);
+    logger.error({ provider: provider.name, err: e }, "Call provider failed");
     status = "failed";
   }
 

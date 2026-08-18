@@ -1,5 +1,6 @@
 import { AgentError } from "../../../domain/entities/errors.ts";
 import type { FunctionDeclaration } from "../../../infrastructure/llm/geminiFunctionCallClient.ts";
+import { logger } from "../../../infrastructure/logging/logger.ts";
 import type { RunState } from "../agentState.ts";
 import { geocodeTool } from "./geocodeTool.ts";
 import { searchTool } from "./searchTool.ts";
@@ -48,7 +49,7 @@ export async function executeTool(
     return await tool.execute(state, args);
   } catch (e) {
     if (e instanceof AgentError) throw e;
-    console.error(`Tool ${name} failed:`, e);
+    logger.error({ tool: name, err: e }, "Tool failed");
     return fail(
       `${name} failed: ${e instanceof Error ? e.message : "unknown error"}. Try a different approach.`
     );

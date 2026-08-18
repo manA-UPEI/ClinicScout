@@ -1,4 +1,5 @@
 import type { ConfigProvider } from "../../application/ports/configProvider.ts";
+import { logger } from "../logging/logger.ts";
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -43,9 +44,11 @@ export async function postGenerateContent(
   if (!response.ok) {
     const message =
       (data as { error?: { message?: string } } | null)?.error?.message ?? "unknown error";
-    console.error(
-      `Gemini ${model} returned ${response.status}: ${message}` +
-        (response.status === 404 ? " — set GEMINI_MODEL to a model your key can access." : "")
+    logger.error(
+      { model, status: response.status, message },
+      response.status === 404
+        ? "Gemini request failed — set GEMINI_MODEL to a model your key can access"
+        : "Gemini request failed"
     );
     return { ok: false, reason: response.status === 429 ? "quota" : "http_error" };
   }
