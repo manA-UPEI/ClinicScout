@@ -4,12 +4,23 @@ import { runCall } from "@/application/call/placeCallUseCase";
 import { parseCallRequest } from "@/application/call/parseCallRequest";
 import type { CallRequestBody } from "@/application/call/parseCallRequest";
 import { createSseResponse } from "@/interface/http/sseResponse";
-import { badRequest } from "@/interface/http/errors";
+import { badRequest, tooManyRequests } from "@/interface/http/errors";
+import { clientIp } from "@/interface/http/clientIp";
+import { FixedWindowRateLimiter } from "@/infrastructure/ratelimit/fixedWindowRateLimiter";
 
 // A mock call is capped at 45s (MAX_CALL_MS) so it fits inside one request.
 // A real call cannot, which is the single biggest thing Phase 2 has to solve:
 // live telephony needs webhooks plus a durable session, not a held-open stream.
 export const maxDuration = 60;
+
+// A call runs up to MAX_CALL_MS plus a Gemini extraction pass at the end.
+// callSessionService's one-active-call-per-clinic rail already stops a
+// clinic being dialled twice at once; this stops one visitor from starting
+// call after call. Eight per ten minutes allows working through a short
+// list of real candidates in one sitting.
+const RATE_LIMIT = 8;
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const limiter = new FixedWindowRateLimiter(RATE_LIMIT, RATE_WINDOW_MS);
 
 /**
  * Places a call to a clinic and streams the conversation back as it happens.
@@ -24,6 +35,14 @@ export const maxDuration = 60;
  * needs no separate endpoint and cannot get out of sync with the stream.
  */
 export async function POST(request: Request) {
+  const { allowed, retryAfterMs } = limiter.consume(clientIp(request));
+  if (!allowed) {
+    return tooManyRequests(
+      "You've placed a lot of calls in a short time. Please wait a bit and try again.",
+      retryAfterMs
+    );
+  }
+
   const body = (await request.json().catch(() => null)) as CallRequestBody | null;
 
   const parsed = parseCallRequest(body);
@@ -32,7 +51,7 @@ export async function POST(request: Request) {
 
   let session;
   try {
-    session = createSession({ clinicId, clinicName, phone });
+    session = await createSession({ clinicId, clinicName, phone });
   } catch (e) {
     if (e instanceof CallError && e.kind === "already_active") {
       return badRequest(e.kind, e.message, 409);
@@ -62,7 +81,7 @@ export async function POST(request: Request) {
       // Leave the session in a terminal state rather than stuck mid-call,
       // so the one-active-call-per-clinic rail cannot deadlock a clinic.
       try {
-        transition(session, "failed");
+        await transition(session, "failed");
       } catch {
         // Already terminal — nothing to correct.
       }
