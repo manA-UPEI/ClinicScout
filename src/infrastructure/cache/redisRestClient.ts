@@ -4,9 +4,11 @@ export interface RedisRestConfig {
 }
 
 /**
- * The Redis commands RedisCache and RedisCallSessionStore need. GET/SET
- * cover the cache; SETNX and DEL are what let the call-session store claim a
- * clinic atomically and release the claim when a call ends.
+ * The Redis commands RedisCache, RedisCallSessionStore, and RedisRateLimiter
+ * need. GET/SET cover the cache; SETNX and DEL are what let the call-session
+ * store claim a clinic atomically and release the claim when a call ends;
+ * INCR/EXPIRE/TTL are what let the rate limiter keep one shared count across
+ * every serverless instance instead of one count per instance.
  */
 export interface RedisTransport {
   get(key: string): Promise<string | null>;
@@ -14,6 +16,11 @@ export interface RedisTransport {
   /** Sets only if the key doesn't already exist. Returns whether the set happened — the atomic primitive an exclusive claim needs instead of a separate check-then-act that could race. */
   setnx(key: string, value: string, exSeconds: number): Promise<boolean>;
   del(key: string): Promise<void>;
+  /** Atomically increments (creating the key at 1 if it didn't exist) and returns the new count. */
+  incr(key: string): Promise<number>;
+  expire(key: string, exSeconds: number): Promise<void>;
+  /** Seconds remaining before the key expires, or null if it has no TTL or doesn't exist. */
+  ttl(key: string): Promise<number | null>;
 }
 
 const TIMEOUT_MS = 5000;
@@ -68,6 +75,20 @@ export function createRedisRestTransport(config: RedisRestConfig): RedisTranspor
     },
     async del(key) {
       await runCommand(config, ["DEL", key]);
+    },
+    async incr(key) {
+      const result = await runCommand(config, ["INCR", key]);
+      return typeof result === "number" ? result : Number(result);
+    },
+    async expire(key, exSeconds) {
+      await runCommand(config, ["EXPIRE", key, exSeconds]);
+    },
+    async ttl(key) {
+      const result = await runCommand(config, ["TTL", key]);
+      const seconds = typeof result === "number" ? result : Number(result);
+      // Redis returns -2 for "no such key" and -1 for "no expiry set" —
+      // neither is a meaningful remaining time.
+      return seconds >= 0 ? seconds : null;
     },
   };
 }

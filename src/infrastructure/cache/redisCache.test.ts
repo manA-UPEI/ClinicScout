@@ -22,6 +22,14 @@ function fakeTransport(): RedisTransport & { store: Map<string, string> } {
     async del(key) {
       store.delete(key);
     },
+    // RedisCache never calls these — stubbed only to satisfy RedisTransport.
+    async incr() {
+      return 1;
+    },
+    async expire() {},
+    async ttl() {
+      return null;
+    },
   };
 }
 
@@ -78,6 +86,15 @@ test("get() fails open to undefined when the transport throws", async () => {
       throw new Error("network down");
     },
     del: async () => {
+      throw new Error("network down");
+    },
+    incr: async () => {
+      throw new Error("network down");
+    },
+    expire: async () => {
+      throw new Error("network down");
+    },
+    ttl: async () => {
       throw new Error("network down");
     },
   };

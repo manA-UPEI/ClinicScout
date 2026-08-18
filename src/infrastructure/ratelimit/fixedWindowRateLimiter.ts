@@ -1,14 +1,17 @@
-export interface RateLimitResult {
-  allowed: boolean;
-  /** Milliseconds until the caller can retry; 0 when `allowed` is true. */
-  retryAfterMs: number;
-}
+import type { RateLimiter, RateLimitResult } from "./rateLimiter.ts";
+
+export type { RateLimitResult } from "./rateLimiter.ts";
 
 /**
- * A small in-memory fixed-window rate limiter — same pattern and the same
- * caveat as TtlCache (infrastructure/cache/ttlCache.ts): good for a single
- * long-running process, not for multiple serverless instances sharing a
- * limit. Swap for a shared store (e.g. Upstash) before that matters.
+ * A small in-memory fixed-window rate limiter — the fallback
+ * createRateLimiter (./createRateLimiter.ts) hands back when no Redis is
+ * configured. Good for a single long-running process, not for multiple
+ * serverless instances sharing a limit — see RedisRateLimiter
+ * (./redisRateLimiter.ts) for the one that actually holds across instances.
+ *
+ * consume() is async only to satisfy the shared RateLimiter interface; the
+ * work itself is synchronous, so a call site doesn't change depending on
+ * which implementation backs it.
  *
  * Fixed windows undercount slightly at the boundary — a burst split across
  * two windows can total up to 2x the limit. Acceptable for stopping
@@ -18,7 +21,7 @@ export interface RateLimitResult {
  * `now` is injectable, the same clock-dependency idiom
  * domain/policies/openingHours.ts and TtlCache both use.
  */
-export class FixedWindowRateLimiter {
+export class FixedWindowRateLimiter implements RateLimiter {
   private hits = new Map<string, { count: number; windowStart: number }>();
   private readonly limit: number;
   private readonly windowMs: number;
@@ -30,8 +33,7 @@ export class FixedWindowRateLimiter {
     this.now = now;
   }
 
-  /** Records one attempt for `key` and reports whether it's allowed. */
-  consume(key: string): RateLimitResult {
+  async consume(key: string): Promise<RateLimitResult> {
     const t = this.now();
     const entry = this.hits.get(key);
 

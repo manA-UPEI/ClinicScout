@@ -22,6 +22,14 @@ function fakeTransport(): RedisTransport {
     async del(key) {
       store.delete(key);
     },
+    // RedisCallSessionStore never calls these — stubbed only to satisfy RedisTransport.
+    async incr() {
+      return 1;
+    },
+    async expire() {},
+    async ttl() {
+      return null;
+    },
   };
 }
 
