@@ -59,20 +59,18 @@ test("a gated OSM hours string recomputes open_now for the merged clinic", () =>
 test("a real 'confirmed closed' verdict is preserved, not treated as absent", () => {
   // isOpenNow can legitimately return false; merge must use ?? (nullish),
   // not || , or a correct "closed" verdict would be discarded as falsy.
+  // "Mo-Su off" is closed on every day of the week, so this is false
+  // regardless of what day or time the suite actually runs (mergeInspection
+  // calls isOpenNow with the real clock and has no injectable "now").
   const merged = mergeInspection(
     clinic({ open_now: null }),
     inspection({
-      opening_hours: "Mo-Fr 09:00-17:00; We off",
-      opening_hours_osm: "Mo-Fr 09:00-17:00; We off",
-      evidence: [{ field: "opening_hours", quote: "Mo-Fr 09:00-17:00; We off" }],
+      opening_hours: "Mo-Su off",
+      opening_hours_osm: "Mo-Su off",
+      evidence: [{ field: "opening_hours", quote: "Mo-Su off" }],
     })
   );
-  assert.equal(merged.open_now, isOpenNowOnWednesday());
-
-  function isOpenNowOnWednesday(): boolean {
-    // "We off" always evaluates false regardless of time of day.
-    return false;
-  }
+  assert.equal(merged.open_now, false);
 });
 
 test("no opening_hours_osm leaves the clinic's existing open_now untouched", () => {
