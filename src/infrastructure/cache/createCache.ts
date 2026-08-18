@@ -2,6 +2,7 @@ import type { Cache } from "./cache.ts";
 import { TtlCache } from "./ttlCache.ts";
 import { RedisCache } from "./redisCache.ts";
 import { createRedisRestTransport } from "./redisRestClient.ts";
+import { readRedisConfig } from "../config/redisConfig.ts";
 
 /**
  * Redis-backed when UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are
@@ -12,7 +13,7 @@ import { createRedisRestTransport } from "./redisRestClient.ts";
  * key, so local dev and a bare-minimum deploy both keep working with
  * nothing extra to provision.
  *
- * Reads process.env directly rather than through ConfigProvider
+ * Reads config via readRedisConfig() rather than through ConfigProvider
  * (infrastructure/config/env.ts): both call sites (overpassClinicDirectory's
  * search cache, inspectClinicUseCase's inspection cache) construct their
  * cache as a module-level singleton at import time — the same shape TtlCache
@@ -21,11 +22,9 @@ import { createRedisRestTransport } from "./redisRestClient.ts";
  * two env lookups made once at startup.
  */
 export function createCache<T>(namespace: string, ttlMs: number): Cache<T> {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  if (url && token) {
-    return new RedisCache<T>(createRedisRestTransport({ url, token }), namespace, ttlMs);
+  const redis = readRedisConfig();
+  if (redis) {
+    return new RedisCache<T>(createRedisRestTransport(redis), namespace, ttlMs);
   }
   return new TtlCache<T>(ttlMs);
 }
