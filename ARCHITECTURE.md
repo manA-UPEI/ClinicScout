@@ -236,8 +236,11 @@ the same move the app makes everywhere else it puts a model near a claim.
 |---|---|
 | [domain/entities/call.ts](src/domain/entities/call.ts) | `CallSession`, `CallStatus`, `CallTurn`, findings, and the user-facing status notes |
 | [domain/services/callScript.ts](src/domain/services/callScript.ts) | The bounded script, the disclosure, and the refusal/IVR/voicemail detectors |
+| [application/ports/callSessionStore.ts](src/application/ports/callSessionStore.ts) | `CallSessionStore` — storage primitives; `callSessionService.ts` owns transition legality and one-call-per-clinic |
 | [application/call/callSessionService.ts](src/application/call/callSessionService.ts) | Lifecycle state machine (transition legality, one-call-per-clinic) |
-| [infrastructure/call/inMemoryCallSessionStore.ts](src/infrastructure/call/inMemoryCallSessionStore.ts) | The Map-based storage `callSessionService.ts` depends on |
+| [infrastructure/call/inMemoryCallSessionStore.ts](src/infrastructure/call/inMemoryCallSessionStore.ts) | The Map-based `CallSessionStore` — single process only |
+| [infrastructure/call/redisCallSessionStore.ts](src/infrastructure/call/redisCallSessionStore.ts) | Redis-backed `CallSessionStore` — the one-call-per-clinic claim is a Redis SET-NX, atomic across instances |
+| [infrastructure/call/createCallSessionStore.ts](src/infrastructure/call/createCallSessionStore.ts) | Picks Redis when `UPSTASH_REDIS_REST_URL`/`_TOKEN` are set, else the in-memory store |
 | [domain/verification/transcriptEvidence.ts](src/domain/verification/transcriptEvidence.ts) | The clinic-turns-only firewall and `buildOutcome` |
 | [application/call/extractFindingsUseCase.ts](src/application/call/extractFindingsUseCase.ts) | Proposes findings — Gemini when configured, a conservative sentence scan otherwise |
 | [application/call/placeCallUseCase.ts](src/application/call/placeCallUseCase.ts) | Drives one call: dial, stream turns, extract, verify, record |
@@ -255,8 +258,9 @@ the same move the app makes everywhere else it puts a model near a claim.
 Live telephony, and the operational gating it requires: a verified caller ID, a
 number allowlist, per-call rate limits, and jurisdiction review of AI-voice
 disclosure rules. A real call also outlives its request, so it needs provider
-webhooks and a durable session store rather than the held-open stream and
-in-memory `Map` used here.
+webhooks — the session surviving past one request is the part a durable store
+alone doesn't solve, since this phase's call still lives entirely inside one
+held-open stream regardless of which `CallSessionStore` backs it.
 
 ## Priority waterfall
 
@@ -358,9 +362,12 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [infrastructure/llm/geminiHttpClient.ts](src/infrastructure/llm/geminiHttpClient.ts) | Shared POST/timeout/error-classification transport used by both Gemini adapters below |
 | [infrastructure/llm/geminiJsonClient.ts](src/infrastructure/llm/geminiJsonClient.ts) | Single-shot structured-JSON extraction; implements `JsonExtractionModel`; returns `null` on any failure |
 | [infrastructure/llm/geminiFunctionCallClient.ts](src/infrastructure/llm/geminiFunctionCallClient.ts) | Function-calling client; implements `FunctionCallingModel`; replays model parts verbatim to preserve thought signatures |
-| [infrastructure/cache/ttlCache.ts](src/infrastructure/cache/ttlCache.ts) | TTL cache with an injectable clock and a deliberate stale read |
+| [infrastructure/cache/cache.ts](src/infrastructure/cache/cache.ts) | `Cache<T>` — the shape both cache backends below implement |
+| [infrastructure/cache/ttlCache.ts](src/infrastructure/cache/ttlCache.ts) | In-memory `Cache<T>` with an injectable clock and a deliberate stale read; single-process only |
+| [infrastructure/cache/redisCache.ts](src/infrastructure/cache/redisCache.ts), [redisRestClient.ts](src/infrastructure/cache/redisRestClient.ts) | Redis-backed `Cache<T>` — same stale-read contract, holds across serverless instances; fails open on a transport error |
+| [infrastructure/cache/createCache.ts](src/infrastructure/cache/createCache.ts) | Picks Redis when `UPSTASH_REDIS_REST_URL`/`_TOKEN` are set, else the in-memory cache — used by both cache call sites below |
 | [infrastructure/config/env.ts](src/infrastructure/config/env.ts) | The one place `GEMINI_API_KEY`/`GEMINI_MODEL` are read from `process.env`; implements `ConfigProvider` |
-| [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts), [inMemoryCallSessionStore.ts](src/infrastructure/call/inMemoryCallSessionStore.ts) | Call subsystem adapters (see Agent-placed calls, above) |
+| [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts) | Call subsystem provider adapter (see Agent-placed calls, above) |
 
 ## External services
 
@@ -395,8 +402,10 @@ than merely incorrect:
 - `callScript.test.ts` — disclosure first, and no slot able to carry patient detail
 - `callSessionService.test.ts` — lifecycle transitions, hang-up at every live stage, one call per clinic
 - `mockCallProvider.test.ts` — each persona's terminal status, and the vague clinic confirming nothing
+- `redisCallSessionStore.test.ts` — the SET-NX claim, and a terminal status releasing it for the next call, against a fake transport
+- `redisCache.test.ts` — the stale-read contract and failing open on a transport error, against a fake transport
 - `excludeSpecialtyListings.test.ts` — the agent path and the deterministic pipeline agreeing on the same duplicate-chain input
-- `ttlCache.test.ts`, `fetchPageLinks.test.ts`, `sseFrame.test.ts`, `actionability.test.ts`, `agentState.test.ts` — the supporting pure functions
+- `ttlCache.test.ts`, `fetchPageLinks.test.ts`, `sseFrame.test.ts`, `actionability.test.ts`, `agentState.test.ts`, `fixedWindowRateLimiter.test.ts` — the supporting pure functions
 
 ```bash
 npm test

@@ -17,7 +17,7 @@ function instantProvider(persona: PersonaId) {
 }
 
 async function call(persona: PersonaId, signal?: AbortSignal) {
-  const session = createSession({
+  const session = await createSession({
     clinicId: `node/${persona}`,
     clinicName: "Riverside Walk-In Clinic",
     phone: "902-555-0142",
@@ -141,7 +141,7 @@ test("the disclosure is delivered before any question is asked", async () => {
 });
 
 test("events stream in the order the UI needs them", async () => {
-  const session = createSession({
+  const session = await createSession({
     clinicId: "node/stream",
     clinicName: "Riverside Walk-In Clinic",
     phone: "902-555-0142",

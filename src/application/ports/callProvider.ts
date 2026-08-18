@@ -8,6 +8,10 @@ import type { CallSession, CallStatus, CallTurn } from "../../domain/entities/ca
  *
  * - `onTurn` is a callback rather than a return value, because a real call
  *   produces speech over minutes and the UI has to show it as it happens.
+ *   It returns a Promise, and a provider must await it before producing the
+ *   next turn: persisting a turn is I/O now (infrastructure/call/redisCallSessionStore.ts
+ *   when configured), and awaiting keeps turns written in the order they were
+ *   spoken instead of racing.
  * - `signal` exists because the user must be able to hang up mid-call, and
  *   because a call that sits on hold has to be cut off by a duration cap.
  * - the promise resolves with a terminal status rather than throwing, because
@@ -21,7 +25,7 @@ export interface CallProvider {
   readonly name: string;
   place(
     session: CallSession,
-    onTurn: (turn: CallTurn) => void,
+    onTurn: (turn: CallTurn) => Promise<void>,
     signal: AbortSignal
   ): Promise<CallStatus>;
 }
