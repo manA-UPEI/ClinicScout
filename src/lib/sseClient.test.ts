@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSseFrame, readSseStream } from "./sseClient.ts";
+import { parseSseFrame, readSseStream } from "../shared/sse/sseFrame.ts";
 
 test("parses an event frame", () => {
   const parsed = parseSseFrame('event: step\ndata: {"id":"geocode","message":"hi"}');

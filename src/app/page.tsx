@@ -6,7 +6,7 @@ import AgentProgress from "@/components/AgentProgress";
 import RecommendationView from "@/components/RecommendationView";
 import SearchingState from "@/components/SearchingState";
 import ErrorState from "@/components/ErrorState";
-import { readSseStream } from "@/lib/sseClient";
+import { useStreamedSse } from "@/components/hooks/useStreamedSse";
 import type { AgentRunResult, AgentStep, InputFormData } from "@/domain/entities/agentRun";
 import type { AgentErrorKind } from "@/domain/entities/errors";
 
@@ -23,6 +23,7 @@ export default function Page() {
   const [result, setResult] = useState<AgentRunResult | null>(null);
   const [error, setError] = useState<ErrorInfo | null>(null);
   const [location, setLocation] = useState("");
+  const { run } = useStreamedSse();
 
   async function handleSubmit(data: InputFormData) {
     setLocation(data.location);
@@ -30,30 +31,10 @@ export default function Page() {
     setResult(null);
     setPhase("searching");
 
-    try {
-      const response = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      // Input validation still answers with plain JSON — there is nothing to
-      // stream when the request never starts a run.
-      if (!response.body || !response.headers.get("Content-Type")?.includes("event-stream")) {
-        const payload = (await response.json().catch(() => null)) as
-          | { error: ErrorInfo }
-          | null;
-        setError(
-          payload?.error ?? {
-            kind: "network",
-            message: "The server returned an unexpected response.",
-          }
-        );
-        setPhase("error");
-        return;
-      }
-
-      for await (const event of readSseStream(response.body)) {
+    await run("/api/search", data, {
+      fallbackErrorMessage: "The server returned an unexpected response.",
+      networkErrorMessage: "Could not reach the server. Check your connection and try again.",
+      onEvent: (event) => {
         if (event.event === "step") {
           setSteps((prev) => [...prev, event.data as AgentStep]);
           setPhase("progress");
@@ -62,16 +43,13 @@ export default function Page() {
         } else if (event.event === "error") {
           setError(event.data as ErrorInfo);
           setPhase("error");
-          return;
         }
-      }
-    } catch {
-      setError({
-        kind: "network",
-        message: "Could not reach the server. Check your connection and try again.",
-      });
-      setPhase("error");
-    }
+      },
+      onError: (error) => {
+        setError({ kind: (error.kind as AgentErrorKind) ?? "network", message: error.message });
+        setPhase("error");
+      },
+    });
   }
 
   function handleStartOver() {

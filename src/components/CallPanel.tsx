@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { readSseStream } from "@/lib/sseClient";
+import { useState } from "react";
+import { useStreamedSse } from "@/components/hooks/useStreamedSse";
 import { canAgentCall } from "@/domain/policies/actionability";
 import { clinicShortId } from "@/domain/entities/clinic";
 import type { Clinic } from "@/domain/entities/clinic";
@@ -29,7 +29,7 @@ export default function CallPanel({ clinic }: Props) {
   const [turns, setTurns] = useState<CallTurn[]>([]);
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const { run, abort } = useStreamedSse();
 
   if (!canAgentCall(clinic)) return null;
 
@@ -40,58 +40,44 @@ export default function CallPanel({ clinic }: Props) {
     setError(null);
     setStatus("dialing");
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      const response = await fetch("/api/call", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          clinicId: clinicShortId(clinic.source_url),
-          clinicName: clinic.clinic_name,
-          phone: clinic.phone,
-          consented: true,
-        }),
-      });
-
-      if (!response.body || !response.headers.get("Content-Type")?.includes("event-stream")) {
-        const payload = (await response.json().catch(() => null)) as
-          | { error: { message: string } }
-          | null;
-        setError(payload?.error?.message ?? "The call could not be placed.");
-        setPhase("done");
-        return;
-      }
-
-      for await (const event of readSseStream(response.body)) {
-        if (event.event === "turn") {
-          setTurns((prev) => [...prev, (event.data as { turn: CallTurn }).turn]);
-        } else if (event.event === "status") {
-          setStatus((event.data as { status: CallStatus }).status);
-        } else if (event.event === "outcome") {
-          setOutcome((event.data as { outcome: CallOutcome }).outcome);
+    await run(
+      "/api/call",
+      {
+        clinicId: clinicShortId(clinic.source_url),
+        clinicName: clinic.clinic_name,
+        phone: clinic.phone,
+        consented: true,
+      },
+      {
+        fallbackErrorMessage: "The call could not be placed.",
+        networkErrorMessage: "Lost contact with the call.",
+        onEvent: (event) => {
+          if (event.event === "turn") {
+            setTurns((prev) => [...prev, (event.data as { turn: CallTurn }).turn]);
+          } else if (event.event === "status") {
+            setStatus((event.data as { status: CallStatus }).status);
+          } else if (event.event === "outcome") {
+            setOutcome((event.data as { outcome: CallOutcome }).outcome);
+            setPhase("done");
+          } else if (event.event === "error") {
+            setError((event.data as { message: string }).message);
+            setPhase("done");
+          }
+        },
+        onError: (error) => {
+          setError(error.message);
           setPhase("done");
-        } else if (event.event === "error") {
-          setError((event.data as { message: string }).message);
-          setPhase("done");
-        }
+        },
+        // An abort is the user hanging up, which CallProgress already
+        // reflects — only a genuine transport failure is worth surfacing as
+        // an error, but the panel still needs to leave the "calling" phase.
+        onAborted: () => setPhase("done"),
       }
-    } catch {
-      // An abort is the user hanging up, which CallProgress already reflects —
-      // only a genuine transport failure is worth surfacing as an error.
-      if (!controller.signal.aborted) {
-        setError("Lost contact with the call.");
-      }
-      setPhase("done");
-    } finally {
-      abortRef.current = null;
-    }
+    );
   }
 
   function hangUp() {
-    abortRef.current?.abort();
+    abort();
     setStatus("aborted");
     setPhase("done");
   }
