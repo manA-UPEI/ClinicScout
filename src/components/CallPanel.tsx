@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { readSseStream } from "@/lib/sseClient";
-import { canAgentCall } from "@/lib/tools/actionability";
-import { shortId } from "@/lib/agent/state";
+import { canAgentCall } from "@/domain/policies/actionability";
+import { clinicShortId } from "@/domain/entities/clinic";
 import type { Clinic } from "@/domain/entities/clinic";
 import type { CallOutcome, CallStatus, CallTurn } from "@/lib/call/types";
 import CallConsentModal from "./CallConsentModal";
@@ -49,7 +49,7 @@ export default function CallPanel({ clinic }: Props) {
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
-          clinicId: shortId(clinic.source_url),
+          clinicId: clinicShortId(clinic.source_url),
           clinicName: clinic.clinic_name,
           phone: clinic.phone,
           consented: true,

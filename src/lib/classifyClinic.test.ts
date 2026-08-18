@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyClinic } from "./tools/classifyClinic.ts";
+import { classifyClinic } from "../domain/policies/classifyClinic.ts";
 
 // The real listings that Stage 3 verification wrongly surfaced as walk-in
 // options near Toronto, Kitchener and Halifax.

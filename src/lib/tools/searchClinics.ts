@@ -1,8 +1,8 @@
 import { AgentError } from "../../domain/entities/errors.ts";
 import type { Clinic, Confidence, Coordinates } from "../../domain/entities/clinic.ts";
-import { isOpenNow } from "../openingHours.ts";
-import { calculate_distance } from "./calculateDistance.ts";
-import { classifyClinic } from "./classifyClinic.ts";
+import { isOpenNow } from "../../domain/policies/openingHours.ts";
+import { calculate_distance } from "../../domain/policies/calculateDistance.ts";
+import { classifyClinic } from "../../domain/policies/classifyClinic.ts";
 import { USER_AGENT } from "./geocode.ts";
 import { cacheKey, TtlCache } from "./cache.ts";
 

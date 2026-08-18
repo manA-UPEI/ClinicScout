@@ -1,5 +1,5 @@
 import { search_clinics } from "./tools/searchClinics.ts";
-import { rank_clinics } from "./tools/rankClinics.ts";
+import { rank_clinics } from "../domain/policies/rankClinics.ts";
 import { geocode } from "./tools/geocode.ts";
 import { inspect_clinic, mergeInspection } from "./tools/inspectClinic.ts";
 import { geminiConfigured } from "./tools/gemini.ts";

@@ -104,13 +104,10 @@ export interface RankedClinic extends Clinic {
  *
  * The full source_url is already a stable unique key, but it repeats 30-odd
  * characters of boilerplate per clinic in every tool result the model sees.
- *
- * Moved verbatim from lib/agent/state.ts (unchanged, bug and all — see the
- * spawned follow-up task for the `\$` escape defect in the template literal
- * below, which is a pre-existing correctness bug, not something to silently
- * fix inside a relocation-only refactor commit).
+ * Moved verbatim from lib/agent/state.ts's `shortId`, renamed for clarity now
+ * that it lives alongside the rest of the Clinic entity.
  */
 export function clinicShortId(sourceUrl: string): string {
   const match = sourceUrl.match(/(node|way|relation)\/(\d+)/);
-  return match ? `${match[1]}\${match[2]}` : sourceUrl;
+  return match ? `${match[1]}/${match[2]}` : sourceUrl;
 }

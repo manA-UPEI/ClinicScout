@@ -1,4 +1,4 @@
-import type { DraftedEmail } from "../../domain/entities/agentRun.ts";
+import type { DraftedEmail } from "../entities/agentRun.ts";
 
 export function draft_appointment_email(
   clinic_name: string,

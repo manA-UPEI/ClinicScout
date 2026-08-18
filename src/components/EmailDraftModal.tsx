@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { draft_appointment_email } from "@/lib/tools/draftAppointmentEmail";
+import { draft_appointment_email } from "@/domain/services/draftAppointmentEmail";
 
 interface Props {
   clinicName: string;

@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { InspectableField, RankedClinic, Relevance } from "@/domain/entities/clinic";
-import { isDeadEnd } from "@/lib/tools/actionability";
+import { isDeadEnd } from "@/domain/policies/actionability";
 import FieldValue from "./FieldValue";
 
 interface Props {

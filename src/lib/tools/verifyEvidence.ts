@@ -1,5 +1,5 @@
 import type { ClinicInspection, Evidence, InspectableField } from "../../domain/entities/clinic.ts";
-import { isValidOpeningHours } from "../openingHours.ts";
+import { isValidOpeningHours } from "../../domain/policies/openingHours.ts";
 
 export const INSPECTABLE_FIELDS: InspectableField[] = [
   "current_capacity",

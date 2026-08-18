@@ -1,5 +1,5 @@
 import type { Clinic, ClinicInspection } from "../../domain/entities/clinic.ts";
-import { isOpenNow } from "../openingHours.ts";
+import { isOpenNow } from "../../domain/policies/openingHours.ts";
 import { fetchClinicPages } from "./fetchPage.ts";
 import type { FetchedPage } from "./fetchPage.ts";
 import { generateJson } from "./gemini.ts";

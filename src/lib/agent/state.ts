@@ -5,8 +5,9 @@ import type {
   GeocodedLocation,
   Relevance,
 } from "../../domain/entities/clinic.ts";
+import { clinicShortId } from "../../domain/entities/clinic.ts";
 import type { AgentReasoning, InputFormData } from "../../domain/entities/agentRun.ts";
-import { hasContactChannel } from "../tools/actionability.ts";
+import { hasContactChannel } from "../../domain/policies/actionability.ts";
 
 /**
  * The agent's blackboard.
@@ -44,16 +45,8 @@ export interface ClinicProjection {
   inspected: boolean;
 }
 
-/**
- * `https://www.openstreetmap.org/node/123` -> `node/123`.
- *
- * The full source_url is already a stable unique key, but it repeats 30-odd
- * characters of boilerplate per clinic in every tool result the model sees.
- */
-export function shortId(sourceUrl: string): string {
-  const match = sourceUrl.match(/(node|way|relation)\/(\d+)/);
-  return match ? `${match[1]}/${match[2]}` : sourceUrl;
-}
+/** Re-exported so existing importers of this module keep working under the old name. */
+export const shortId = clinicShortId;
 
 export function createRunState(input: InputFormData): RunState {
   return {

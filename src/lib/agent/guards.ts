@@ -1,7 +1,7 @@
 import type { AgentReasoning } from "../../domain/entities/agentRun.ts";
 import type { Clinic, InspectableField } from "../../domain/entities/clinic.ts";
 import { INSPECTABLE_FIELDS } from "../tools/verifyEvidence.ts";
-import { isDeadEnd } from "../tools/actionability.ts";
+import { isDeadEnd } from "../../domain/policies/actionability.ts";
 import { eligibleClinics, getClinic } from "./state.ts";
 import type { RunState } from "./state.ts";
 

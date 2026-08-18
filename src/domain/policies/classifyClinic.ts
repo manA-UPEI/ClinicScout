@@ -1,4 +1,4 @@
-import type { Relevance, ClinicClassification } from "../../domain/entities/clinic.ts";
+import type { Relevance, ClinicClassification } from "../entities/clinic.ts";
 
 /**
  * OpenStreetMap's `amenity=clinic|doctors` covers everything from urgent care

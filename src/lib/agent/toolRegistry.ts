@@ -4,7 +4,7 @@ import type { Clinic } from "../../domain/entities/clinic.ts";
 import type { FunctionDeclaration } from "../gemini/functionCall.ts";
 import { geocode } from "../tools/geocode.ts";
 import { search_clinics } from "../tools/searchClinics.ts";
-import { rank_clinics } from "../tools/rankClinics.ts";
+import { rank_clinics } from "../../domain/policies/rankClinics.ts";
 import { inspect_clinic, mergeInspection } from "../tools/inspectClinic.ts";
 import { validateFinalization } from "./guards.ts";
 import {

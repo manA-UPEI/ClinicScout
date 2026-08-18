@@ -16,7 +16,7 @@ export function cacheKey(location: Coordinates, radius_km: number): string {
  * serverless invocations, and this app doesn't run on one.
  *
  * `now` is injectable so freshness can be tested without real timers, the
- * same pattern lib/openingHours.ts uses for its own clock dependency.
+ * same pattern domain/policies/openingHours.ts uses for its own clock dependency.
  */
 export class TtlCache<T> {
   private store = new Map<string, { value: T; expiresAt: number }>();

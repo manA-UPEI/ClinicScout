@@ -1,4 +1,4 @@
-import type { Coordinates } from "../../domain/entities/clinic.ts";
+import type { Coordinates } from "../entities/clinic.ts";
 
 const EARTH_RADIUS_KM = 6371;
 
