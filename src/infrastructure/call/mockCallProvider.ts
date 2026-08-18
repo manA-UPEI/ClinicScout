@@ -148,7 +148,7 @@ export interface MockOptions {
   ringMs?: number;
 }
 
-type Say = (speaker: "agent" | "clinic", text: string) => void;
+type Say = (speaker: "agent" | "clinic", text: string) => Promise<void>;
 
 interface Pacing {
   agentPace: number;
@@ -170,12 +170,12 @@ async function greetPhase(
 ): Promise<CallStatus | null> {
   if (!persona.greeting) return null;
 
-  say("clinic", persona.greeting);
+  await say("clinic", persona.greeting);
 
   if (isVoicemail(persona.greeting)) return "voicemail";
   if (isIvr(persona.greeting)) {
     await sleep(pacing.agentPace, signal);
-    say("agent", IVR_WITHDRAWAL);
+    await say("agent", IVR_WITHDRAWAL);
     return "ivr_blocked";
   }
 
@@ -201,18 +201,18 @@ async function scriptPhase(
 
     await sleep(pacing.agentPace, signal);
     if (signal.aborted) return "aborted";
-    say("agent", line.text);
+    await say("agent", line.text);
 
     const reply = persona.replies[line.id];
     if (reply === undefined) continue;
 
     await sleep(pacing.clinicPace, signal);
     if (signal.aborted) return "aborted";
-    say("clinic", reply);
+    await say("clinic", reply);
 
     if (isRefusal(reply)) {
       await sleep(pacing.agentPace, signal);
-      say("agent", WITHDRAWAL);
+      await say("agent", WITHDRAWAL);
       return "declined_ai";
     }
   }
@@ -232,7 +232,7 @@ export function createMockProvider(options: MockOptions = {}): CallProvider {
 
     async place(
       session: CallSession,
-      onTurn: (turn: CallTurn) => void,
+      onTurn: (turn: CallTurn) => Promise<void>,
       signal: AbortSignal
     ): Promise<CallStatus> {
       const persona = PERSONAS[options.persona ?? personaFor(session.clinicId)];

@@ -1,57 +1,64 @@
 import { isTerminal } from "../../domain/entities/call.ts";
 import type { CallSession } from "../../domain/entities/call.ts";
+import type { CallSessionStore } from "../../application/ports/callSessionStore.ts";
 
 /**
- * The in-process session store.
+ * The in-process CallSessionStore — the fallback createCallSessionStore.ts
+ * (./createCallSessionStore.ts) hands back when no Redis is configured. Same
+ * pragmatic single-process choice infrastructure/cache/ttlCache.ts makes.
  *
- * A plain Map, the same pragmatic choice infrastructure/cache/ttlCache.ts
- * makes and for the same reason: this app runs as a single long-lived Node
- * process, and a shared store would be scaffolding for a deployment shape it
- * does not have. Phase 2 replaces this adapter, because a real call outlives
- * the request that started it and its state has to survive somewhere the
- * provider's webhook can reach.
- *
- * Only storage lives here. Which transitions are legal, and the one-live-call
- * -per-clinic rule, are business rules and live in
- * application/call/callSessionService.ts.
+ * `createIfFree` has no `await` between its check and its write, so despite
+ * the async signature it runs as one synchronous block — the atomicity a
+ * single Node process already gave the old synchronous version for free,
+ * preserved deliberately here rather than lost to the async conversion.
  */
 
 /**
- * How long a finished session stays readable. Long enough for the user to read
- * the outcome and for a late-joining stream to catch up; short enough that a
- * long-running dev server does not accumulate transcripts indefinitely.
+ * How long a finished session stays readable. Long enough for the user to
+ * read the outcome and for a late-joining stream to catch up; short enough
+ * that a long-running dev server does not accumulate transcripts indefinitely.
  */
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
 const sessions = new Map<string, CallSession>();
 
-/** Drops finished sessions past their TTL. Called on write, so the map cannot grow unboundedly. */
-export function sweep(now: number): void {
+function sweep(now: number): void {
   for (const [id, session] of sessions) {
-    const finishedAt = session.endedAt;
-    if (finishedAt !== null && now - finishedAt > SESSION_TTL_MS) {
+    if (session.endedAt !== null && now - session.endedAt > SESSION_TTL_MS) {
       sessions.delete(id);
     }
   }
 }
 
-export function put(session: CallSession): void {
-  sessions.set(session.id, session);
-}
+export const inMemoryCallSessionStore: CallSessionStore = {
+  async get(id) {
+    return sessions.get(id);
+  },
 
-export function get(id: string): CallSession | undefined {
-  return sessions.get(id);
-}
+  async findActiveFor(clinicId) {
+    for (const session of sessions.values()) {
+      if (session.clinicId === clinicId && !isTerminal(session.status)) return session;
+    }
+    return undefined;
+  },
 
-/** The first non-terminal session for this clinic, if one exists. */
-export function findActiveFor(clinicId: string): CallSession | undefined {
-  for (const session of sessions.values()) {
-    if (session.clinicId === clinicId && !isTerminal(session.status)) return session;
-  }
-  return undefined;
-}
+  async createIfFree(session) {
+    sweep(Date.now());
+    for (const existing of sessions.values()) {
+      if (existing.clinicId === session.clinicId && !isTerminal(existing.status)) {
+        return false;
+      }
+    }
+    sessions.set(session.id, session);
+    return true;
+  },
 
-/** Test seam — the store is module-level, so a suite needs a way to reset it. */
-export function clear(): void {
+  async save(session) {
+    sessions.set(session.id, session);
+  },
+};
+
+/** Test seam — the store above is a module-level singleton, so a suite needs a way to reset it. */
+export function clearInMemorySessions(): void {
   sessions.clear();
 }

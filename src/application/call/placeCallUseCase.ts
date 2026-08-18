@@ -1,6 +1,7 @@
 import { extractFindings } from "./extractFindingsUseCase.ts";
 import { appendTurn, MAX_CALL_MS, recordOutcome, transition } from "./callSessionService.ts";
 import { buildOutcome } from "../../domain/verification/transcriptEvidence.ts";
+import { logger } from "../../infrastructure/logging/logger.ts";
 import type { CallProvider } from "../ports/callProvider.ts";
 import type { CallOutcome, CallSession, CallStatus, CallTurn } from "../../domain/entities/call.ts";
 
@@ -25,12 +26,12 @@ export async function runCall(
   onEvent: (event: CallEvent) => void,
   userSignal?: AbortSignal
 ): Promise<CallOutcome> {
-  const emitStatus = (status: CallStatus) => {
-    transition(session, status);
+  const emitStatus = async (status: CallStatus) => {
+    await transition(session, status);
     onEvent({ kind: "status", status });
   };
 
-  emitStatus("dialing");
+  await emitStatus("dialing");
 
   // The user hanging up and the call running long are the same thing to the
   // provider: stop talking. Combining them here keeps that logic out of every
@@ -44,18 +45,18 @@ export async function runCall(
   try {
     status = await provider.place(
       session,
-      (turn) => {
+      async (turn) => {
         // First words heard is what "connected" actually means; a provider
         // that never emits a turn leaves the session in `dialing` and
         // terminates as no_answer.
-        if (session.status === "dialing") emitStatus("in_progress");
-        appendTurn(session, turn);
+        if (session.status === "dialing") await emitStatus("in_progress");
+        await appendTurn(session, turn);
         onEvent({ kind: "turn", turn });
       },
       signal
     );
   } catch (e) {
-    console.error(`Call provider ${provider.name} failed:`, e);
+    logger.error({ provider: provider.name, err: e }, "Call provider failed");
     status = "failed";
   }
 
@@ -63,11 +64,11 @@ export async function runCall(
   // stopped listening, so nothing after that point is theirs to act on.
   if (userSignal?.aborted) status = "aborted";
 
-  emitStatus(status);
+  await emitStatus(status);
 
   const claims = await extractFindings(session.transcript);
   const outcome = buildOutcome(status, claims, session.transcript);
-  recordOutcome(session, outcome);
+  await recordOutcome(session, outcome);
   onEvent({ kind: "outcome", outcome });
 
   return outcome;

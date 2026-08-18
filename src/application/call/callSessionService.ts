@@ -1,10 +1,12 @@
 import { isTerminal } from "../../domain/entities/call.ts";
 import type { CallOutcome, CallSession, CallStatus, CallTurn } from "../../domain/entities/call.ts";
-import * as store from "../../infrastructure/call/inMemoryCallSessionStore.ts";
+import { callSessionStore } from "../../infrastructure/call/createCallSessionStore.ts";
+import { clearInMemorySessions } from "../../infrastructure/call/inMemoryCallSessionStore.ts";
 
 /**
- * The call lifecycle rules. Storage itself lives behind
- * infrastructure/call/inMemoryCallSessionStore.ts; what is enforced here is
+ * The call lifecycle rules. Storage itself lives behind a CallSessionStore
+ * (application/ports/callSessionStore.ts — in-memory or Redis, chosen by
+ * infrastructure/call/createCallSessionStore.ts); what is enforced here is
  * which transitions are legal and the anti-abuse rail on concurrent calls.
  */
 
@@ -57,25 +59,14 @@ export interface CreateSessionInput {
  * simultaneous automated calls into one clinic's phone line, which is
  * indistinguishable from harassment from the receptionist's side.
  */
-export function activeSessionFor(clinicId: string): CallSession | undefined {
-  return store.findActiveFor(clinicId);
+export async function activeSessionFor(clinicId: string): Promise<CallSession | undefined> {
+  return callSessionStore.findActiveFor(clinicId);
 }
 
-export function createSession(
+export async function createSession(
   input: CreateSessionInput,
   now: () => number = Date.now
-): CallSession {
-  const at = now();
-  store.sweep(at);
-
-  const existing = activeSessionFor(input.clinicId);
-  if (existing) {
-    throw new CallError(
-      "already_active",
-      `A call to ${input.clinicName} is already in progress.`
-    );
-  }
-
+): Promise<CallSession> {
   const session: CallSession = {
     id: globalThis.crypto.randomUUID(),
     clinicId: input.clinicId,
@@ -84,29 +75,36 @@ export function createSession(
     status: "awaiting_consent",
     transcript: [],
     outcome: null,
-    createdAt: at,
+    createdAt: now(),
     startedAt: null,
     endedAt: null,
   };
-  store.put(session);
+
+  const claimed = await callSessionStore.createIfFree(session);
+  if (!claimed) {
+    throw new CallError(
+      "already_active",
+      `A call to ${input.clinicName} is already in progress.`
+    );
+  }
   return session;
 }
 
-export function getSession(id: string): CallSession | undefined {
-  return store.get(id);
+export async function getSession(id: string): Promise<CallSession | undefined> {
+  return callSessionStore.get(id);
 }
 
-export function requireSession(id: string): CallSession {
-  const session = store.get(id);
+export async function requireSession(id: string): Promise<CallSession> {
+  const session = await callSessionStore.get(id);
   if (!session) throw new CallError("not_found", "That call could not be found.");
   return session;
 }
 
-export function transition(
+export async function transition(
   session: CallSession,
   next: CallStatus,
   now: () => number = Date.now
-): CallSession {
+): Promise<CallSession> {
   if (!ALLOWED[session.status].includes(next)) {
     throw new CallError(
       "illegal_transition",
@@ -117,19 +115,28 @@ export function transition(
   session.status = next;
   if (next === "in_progress" && session.startedAt === null) session.startedAt = now();
   if (isTerminal(next) && session.endedAt === null) session.endedAt = now();
+
+  await callSessionStore.save(session);
   return session;
 }
 
-export function appendTurn(session: CallSession, turn: CallTurn): CallTurn {
+export async function appendTurn(session: CallSession, turn: CallTurn): Promise<CallTurn> {
   session.transcript.push(turn);
+  await callSessionStore.save(session);
   return turn;
 }
 
-export function recordOutcome(session: CallSession, outcome: CallOutcome): void {
+export async function recordOutcome(session: CallSession, outcome: CallOutcome): Promise<void> {
   session.outcome = outcome;
+  await callSessionStore.save(session);
 }
 
-/** Test seam — the store is module-level, so a suite needs a way to reset it. */
+/**
+ * Test seam — only actually resets anything when the in-memory store is the
+ * one in use, which is always true in tests (they never set
+ * UPSTASH_REDIS_REST_URL). Kept synchronous so existing `beforeEach(() =>
+ * _resetSessions())` calls don't need to become async.
+ */
 export function _resetSessions(): void {
-  store.clear();
+  clearInMemorySessions();
 }

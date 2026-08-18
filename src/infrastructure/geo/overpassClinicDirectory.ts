@@ -4,7 +4,8 @@ import { isOpenNow } from "../../domain/policies/openingHours.ts";
 import { calculate_distance } from "../../domain/policies/calculateDistance.ts";
 import { classifyClinic } from "../../domain/policies/classifyClinic.ts";
 import { USER_AGENT } from "./nominatimGeocoder.ts";
-import { cacheKey, TtlCache } from "../cache/ttlCache.ts";
+import { cacheKey } from "../cache/ttlCache.ts";
+import { createCache } from "../cache/createCache.ts";
 import type { ClinicDirectory, ClinicSearchResult } from "../../application/ports/clinicDirectory.ts";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
@@ -17,7 +18,7 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ATTEMPTS = 2;
 const BACKOFF_MS = [2000];
 
-const cache = new TtlCache<Clinic[]>(CACHE_TTL_MS);
+const cache = createCache<Clinic[]>("search", CACHE_TTL_MS);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -217,7 +218,7 @@ export async function search_clinics(
 ): Promise<SearchResult> {
   const key = cacheKey(location, radius_km);
 
-  const fresh = cache.get(key);
+  const fresh = await cache.get(key);
   if (fresh) return { clinics: fresh, stale: false };
 
   const query = buildQuery(location, Math.round(radius_km * 1000));
@@ -225,11 +226,11 @@ export async function search_clinics(
 
   if (data) {
     const clinics = parseClinics(data, location, radius_km);
-    cache.set(key, clinics);
+    await cache.set(key, clinics);
     return { clinics, stale: false };
   }
 
-  const stale = cache.getStale(key);
+  const stale = await cache.getStale(key);
   if (stale) return { clinics: stale, stale: true };
 
   throw new AgentError(
