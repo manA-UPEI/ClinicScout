@@ -1,4 +1,4 @@
-import type { CallOutcome, CallSession, CallStatus, CallTurn } from "../../lib/call/types.ts";
+import type { CallOutcome, CallSession, CallStatus, CallTurn } from "../../domain/entities/call.ts";
 
 export interface CreateSessionInput {
   clinicId: string;

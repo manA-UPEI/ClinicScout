@@ -8,7 +8,7 @@ import {
   getSession,
   requireSession,
   transition,
-} from "./call/session.ts";
+} from "../application/call/callSessionService.ts";
 
 const CLINIC = {
   clinicId: "node/123",

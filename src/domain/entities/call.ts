@@ -6,7 +6,7 @@
  * deliberately no code path by which a call commits to an appointment, so a
  * wrong turn on a call cannot reserve a real slot in a real waiting room.
  *
- * It is also simulated — see lib/call/providers/mock.ts. Everything above the
+ * It is also simulated — see infrastructure/call/mockCallProvider.ts. Everything above the
  * provider boundary (consent, state machine, transcript, verification) is real,
  * which is what makes swapping in live telephony an adapter rather than a
  * rewrite.
@@ -76,7 +76,7 @@ export interface CallOutcome {
 
 export interface CallSession {
   id: string;
-  /** shortId form (`node/123`), matching lib/agent/state.ts. */
+  /** shortId form (`node/123`), matching domain/entities/clinic.ts's clinicShortId. */
   clinicId: string;
   clinicName: string;
   phone: string;

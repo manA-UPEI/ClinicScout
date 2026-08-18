@@ -1,7 +1,7 @@
 import { generateJson, geminiConfigured } from "../../infrastructure/llm/geminiJsonClient.ts";
 import type { ResponseSchema } from "../../infrastructure/llm/geminiJsonClient.ts";
 import { CALL_FIELDS } from "../../domain/verification/transcriptEvidence.ts";
-import type { CallTurn, ClaimedFinding } from "./types.ts";
+import type { CallTurn, ClaimedFinding } from "../../domain/entities/call.ts";
 
 /**
  * Reads a finished transcript and proposes what the clinic said.

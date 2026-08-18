@@ -1,6 +1,6 @@
 "use client";
 
-import { buildScript, DISCLOSURE } from "@/lib/call/script";
+import { buildScript, DISCLOSURE } from "@/domain/services/callScript";
 
 interface Props {
   clinicName: string;

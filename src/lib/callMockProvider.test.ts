@@ -1,10 +1,10 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { createMockProvider, PERSONAS } from "./call/providers/mock.ts";
-import type { PersonaId } from "./call/providers/mock.ts";
-import { _resetSessions, createSession } from "./call/session.ts";
-import { runCall } from "./call/runCall.ts";
-import type { CallOutcome, CallStatus } from "./call/types.ts";
+import { createMockProvider, PERSONAS } from "../infrastructure/call/mockCallProvider.ts";
+import type { PersonaId } from "../infrastructure/call/mockCallProvider.ts";
+import { _resetSessions, createSession } from "../application/call/callSessionService.ts";
+import { runCall } from "../application/call/placeCallUseCase.ts";
+import type { CallOutcome, CallStatus } from "../domain/entities/call.ts";
 
 /** Instant pacing — the delays exist for the UI, not for the logic. */
 function instantProvider(persona: PersonaId) {

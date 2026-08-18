@@ -1,7 +1,7 @@
 "use client";
 
-import { CALL_FIELD_LABELS, STATUS_NOTE } from "@/lib/call/types";
-import type { CallStatus, CallTurn } from "@/lib/call/types";
+import { CALL_FIELD_LABELS, STATUS_NOTE } from "@/domain/entities/call";
+import type { CallStatus, CallTurn } from "@/domain/entities/call";
 
 interface Props {
   clinicName: string;

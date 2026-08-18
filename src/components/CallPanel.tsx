@@ -5,7 +5,7 @@ import { readSseStream } from "@/lib/sseClient";
 import { canAgentCall } from "@/domain/policies/actionability";
 import { clinicShortId } from "@/domain/entities/clinic";
 import type { Clinic } from "@/domain/entities/clinic";
-import type { CallOutcome, CallStatus, CallTurn } from "@/lib/call/types";
+import type { CallOutcome, CallStatus, CallTurn } from "@/domain/entities/call";
 import CallConsentModal from "./CallConsentModal";
 import CallProgress from "./CallProgress";
 import CallOutcomeCard from "./CallOutcomeCard";

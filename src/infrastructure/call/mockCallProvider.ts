@@ -5,10 +5,10 @@ import {
   isVoicemail,
   IVR_WITHDRAWAL,
   WITHDRAWAL,
-} from "../script.ts";
-import type { ScriptStepId } from "../script.ts";
-import type { CallProvider } from "./index.ts";
-import type { CallSession, CallStatus, CallTurn } from "../types.ts";
+} from "../../domain/services/callScript.ts";
+import type { ScriptStepId } from "../../domain/services/callScript.ts";
+import type { CallProvider } from "../../application/ports/callProvider.ts";
+import type { CallSession, CallStatus, CallTurn } from "../../domain/entities/call.ts";
 
 /**
  * A scripted receptionist on the other end of the line.
@@ -148,9 +148,83 @@ export interface MockOptions {
   ringMs?: number;
 }
 
+type Say = (speaker: "agent" | "clinic", text: string) => void;
+
+interface Pacing {
+  agentPace: number;
+  clinicPace: number;
+}
+
+/**
+ * Delivers the answerer's opening words and decides whether a conversation is
+ * possible at all. Returns a terminal status when it isn't — this is checked
+ * before the agent speaks, because talking over an answering machine or
+ * reading a script at a phone tree is exactly the tone-deaf automation this
+ * feature should not produce.
+ */
+async function greetPhase(
+  persona: Persona,
+  say: Say,
+  signal: AbortSignal,
+  pacing: Pacing
+): Promise<CallStatus | null> {
+  if (!persona.greeting) return null;
+
+  say("clinic", persona.greeting);
+
+  if (isVoicemail(persona.greeting)) return "voicemail";
+  if (isIvr(persona.greeting)) {
+    await sleep(pacing.agentPace, signal);
+    say("agent", IVR_WITHDRAWAL);
+    return "ivr_blocked";
+  }
+
+  await sleep(pacing.clinicPace, signal);
+  return null;
+}
+
+/**
+ * Walks the fixed script, pairing each agent line with this persona's reply.
+ * Withdraws immediately on a refusal — a refusal is final, not a negotiation.
+ */
+async function scriptPhase(
+  persona: Persona,
+  clinicName: string,
+  say: Say,
+  signal: AbortSignal,
+  pacing: Pacing,
+  startedAt: number
+): Promise<CallStatus> {
+  for (const line of buildScript(clinicName)) {
+    if (signal.aborted) return "aborted";
+    if (Date.now() - startedAt > MAX_MOCK_CALL_MS) return "failed";
+
+    await sleep(pacing.agentPace, signal);
+    if (signal.aborted) return "aborted";
+    say("agent", line.text);
+
+    const reply = persona.replies[line.id];
+    if (reply === undefined) continue;
+
+    await sleep(pacing.clinicPace, signal);
+    if (signal.aborted) return "aborted";
+    say("clinic", reply);
+
+    if (isRefusal(reply)) {
+      await sleep(pacing.agentPace, signal);
+      say("agent", WITHDRAWAL);
+      return "declined_ai";
+    }
+  }
+
+  return "completed";
+}
+
 export function createMockProvider(options: MockOptions = {}): CallProvider {
-  const agentPace = options.agentPaceMs ?? 900;
-  const clinicPace = options.clinicPaceMs ?? 1100;
+  const pacing: Pacing = {
+    agentPace: options.agentPaceMs ?? 900,
+    clinicPace: options.clinicPaceMs ?? 1100,
+  };
   const ringMs = options.ringMs ?? 1500;
 
   return {
@@ -163,7 +237,7 @@ export function createMockProvider(options: MockOptions = {}): CallProvider {
     ): Promise<CallStatus> {
       const persona = PERSONAS[options.persona ?? personaFor(session.clinicId)];
       const startedAt = Date.now();
-      const say = (speaker: "agent" | "clinic", text: string) =>
+      const say: Say = (speaker, text) =>
         onTurn({ speaker, text, atMs: Date.now() - startedAt });
 
       await sleep(ringMs, signal);
@@ -171,43 +245,10 @@ export function createMockProvider(options: MockOptions = {}): CallProvider {
 
       if (persona.unanswered) return "no_answer";
 
-      if (persona.greeting) {
-        say("clinic", persona.greeting);
-        // Checked before the agent speaks: talking over an answering machine or
-        // reading a script at a phone tree is exactly the tone-deaf automation
-        // this feature should not produce.
-        if (isVoicemail(persona.greeting)) return "voicemail";
-        if (isIvr(persona.greeting)) {
-          await sleep(agentPace, signal);
-          say("agent", IVR_WITHDRAWAL);
-          return "ivr_blocked";
-        }
-        await sleep(clinicPace, signal);
-      }
+      const greetOutcome = await greetPhase(persona, say, signal, pacing);
+      if (greetOutcome) return greetOutcome;
 
-      for (const line of buildScript(session.clinicName)) {
-        if (signal.aborted) return "aborted";
-        if (Date.now() - startedAt > MAX_MOCK_CALL_MS) return "failed";
-
-        await sleep(agentPace, signal);
-        if (signal.aborted) return "aborted";
-        say("agent", line.text);
-
-        const reply = persona.replies[line.id];
-        if (reply === undefined) continue;
-
-        await sleep(clinicPace, signal);
-        if (signal.aborted) return "aborted";
-        say("clinic", reply);
-
-        if (isRefusal(reply)) {
-          await sleep(agentPace, signal);
-          say("agent", WITHDRAWAL);
-          return "declined_ai";
-        }
-      }
-
-      return "completed";
+      return scriptPhase(persona, session.clinicName, say, signal, pacing, startedAt);
     },
   };
 }

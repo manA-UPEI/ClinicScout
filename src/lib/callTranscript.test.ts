@@ -4,7 +4,7 @@ import {
   buildOutcome,
   verifyAgainstTranscript,
 } from "../domain/verification/transcriptEvidence.ts";
-import type { CallTurn } from "./call/types.ts";
+import type { CallTurn } from "../domain/entities/call.ts";
 
 const TRANSCRIPT: CallTurn[] = [
   { speaker: "clinic", text: "Good afternoon, clinic reception.", atMs: 0 },

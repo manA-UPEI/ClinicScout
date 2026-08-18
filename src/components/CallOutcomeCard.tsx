@@ -1,7 +1,7 @@
 "use client";
 
-import { CALL_FIELD_LABELS, STATUS_NOTE } from "@/lib/call/types";
-import type { CallOutcome } from "@/lib/call/types";
+import { CALL_FIELD_LABELS, STATUS_NOTE } from "@/domain/entities/call";
+import type { CallOutcome } from "@/domain/entities/call";
 import FieldValue from "./FieldValue";
 
 interface Props {

@@ -1,4 +1,4 @@
-import type { CallSession, CallStatus, CallTurn } from "../types.ts";
+import type { CallSession, CallStatus, CallTurn } from "../../domain/entities/call.ts";
 
 /**
  * How a call actually gets placed.
@@ -26,10 +26,10 @@ export interface CallProvider {
   ): Promise<CallStatus>;
 }
 
-/**
- * Only the mock exists today, and that is deliberate rather than unfinished:
- * placing real automated calls to medical clinics needs a verified caller ID,
- * a number allowlist, and per-jurisdiction disclosure review before it should
- * dial anything. Phase 2 adds `twilio.ts` here behind an explicit flag.
- */
-export { mockProvider } from "./mock.ts";
+// Only the mock implements this today, and that is deliberate rather than
+// unfinished: placing real automated calls to medical clinics needs a verified
+// caller ID, a number allowlist, and per-jurisdiction disclosure review before
+// it should dial anything. Phase 2 adds a Twilio adapter alongside
+// infrastructure/call/mockCallProvider.ts, behind an explicit flag. The
+// implementations live in infrastructure/ and are not re-exported here — a
+// port must not depend on its own adapters.

@@ -6,7 +6,7 @@ import type {
   CallStatus,
   CallTurn,
   ClaimedFinding,
-} from "../../lib/call/types.ts";
+} from "../entities/call.ts";
 
 export const CALL_FIELDS: CallField[] = [
   "accepts_walk_ins_today",

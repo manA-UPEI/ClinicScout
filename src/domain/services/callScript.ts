@@ -51,7 +51,7 @@ export const IVR_WITHDRAWAL =
 
 /**
  * The full script for one call. Takes the clinic name and nothing else — the
- * single-parameter signature is asserted in lib/callScript.test.ts, so a later
+ * single-parameter signature is asserted in the call-script suite, so a later
  * change that threads patient detail through here fails the suite rather than
  * quietly shipping.
  */

@@ -1,7 +1,7 @@
-import { createSession, CallError, transition } from "@/lib/call/session";
-import { createMockProvider } from "@/lib/call/providers/mock";
-import { runCall } from "@/lib/call/runCall";
-import type { PersonaId } from "@/lib/call/providers/mock";
+import { createSession, CallError, transition } from "@/application/call/callSessionService";
+import { createMockProvider } from "@/infrastructure/call/mockCallProvider";
+import { runCall } from "@/application/call/placeCallUseCase";
+import type { PersonaId } from "@/infrastructure/call/mockCallProvider";
 
 // A mock call is capped at 45s (MAX_CALL_MS) so it fits inside one request.
 // A real call cannot, which is the single biggest thing Phase 2 has to solve:
