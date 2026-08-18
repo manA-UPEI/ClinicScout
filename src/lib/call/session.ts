@@ -4,7 +4,7 @@ import type { CallOutcome, CallSession, CallStatus, CallTurn } from "./types.ts"
 /**
  * Call lifecycle and the in-process store holding it.
  *
- * The store is a plain Map, the same pragmatic choice lib/tools/cache.ts makes
+ * The store is a plain Map, the same pragmatic choice infrastructure/cache/ttlCache.ts makes
  * and for the same reason: this app runs as a single long-lived Node process,
  * and a shared store would be scaffolding for a deployment shape it does not
  * have. Phase 2 replaces it, because a real call outlives the request that

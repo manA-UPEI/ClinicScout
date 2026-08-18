@@ -3,8 +3,9 @@ import type { Clinic, Confidence, Coordinates } from "../../domain/entities/clin
 import { isOpenNow } from "../../domain/policies/openingHours.ts";
 import { calculate_distance } from "../../domain/policies/calculateDistance.ts";
 import { classifyClinic } from "../../domain/policies/classifyClinic.ts";
-import { USER_AGENT } from "./geocode.ts";
-import { cacheKey, TtlCache } from "./cache.ts";
+import { USER_AGENT } from "./nominatimGeocoder.ts";
+import { cacheKey, TtlCache } from "../cache/ttlCache.ts";
+import type { ClinicDirectory, ClinicSearchResult } from "../../application/ports/clinicDirectory.ts";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
@@ -158,23 +159,19 @@ export interface SearchResult {
   stale: boolean;
 }
 
+interface RetryOutcome {
+  /** Parsed response body, or null if every attempt failed. */
+  data: { elements?: OverpassElement[] } | null;
+  /** True once at least one attempt got an HTTP response at all, even a failing one — shapes the error message when every attempt still failed. */
+  sawResponse: boolean;
+}
+
 /**
  * The public Overpass instance rate-limits and occasionally 5xx's under load
  * — observed directly during demo runs. A single failed request used to end
- * the whole search; now a transient failure gets retried with backoff, and if
- * every attempt still fails, a cached result (even an expired one) is served
- * rather than surfacing an error the user can do nothing about.
+ * the whole search; now a transient failure gets retried with backoff.
  */
-export async function search_clinics(
-  location: Coordinates,
-  radius_km: number
-): Promise<SearchResult> {
-  const key = cacheKey(location, radius_km);
-
-  const fresh = cache.get(key);
-  if (fresh) return { clinics: fresh, stale: false };
-
-  const query = buildQuery(location, Math.round(radius_km * 1000));
+async function fetchWithRetry(query: string): Promise<RetryOutcome> {
   let sawResponse = false;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -192,9 +189,7 @@ export async function search_clinics(
 
     if (response?.ok) {
       const data = (await response.json()) as { elements?: OverpassElement[] };
-      const clinics = parseClinics(data, location, radius_km);
-      cache.set(key, clinics);
-      return { clinics, stale: false };
+      return { data, sawResponse: true };
     }
 
     if (response) sawResponse = true;
@@ -209,6 +204,31 @@ export async function search_clinics(
     await sleep(BACKOFF_MS[attempt]);
   }
 
+  return { data: null, sawResponse };
+}
+
+/**
+ * If every attempt still fails, a cached result (even an expired one) is
+ * served rather than surfacing an error the user can do nothing about.
+ */
+export async function search_clinics(
+  location: Coordinates,
+  radius_km: number
+): Promise<SearchResult> {
+  const key = cacheKey(location, radius_km);
+
+  const fresh = cache.get(key);
+  if (fresh) return { clinics: fresh, stale: false };
+
+  const query = buildQuery(location, Math.round(radius_km * 1000));
+  const { data, sawResponse } = await fetchWithRetry(query);
+
+  if (data) {
+    const clinics = parseClinics(data, location, radius_km);
+    cache.set(key, clinics);
+    return { clinics, stale: false };
+  }
+
   const stale = cache.getStale(key);
   if (stale) return { clinics: stale, stale: true };
 
@@ -218,4 +238,12 @@ export async function search_clinics(
       ? "The clinic directory is busy right now. Please try again in a moment."
       : "Could not reach the clinic directory."
   );
+}
+
+/** The ClinicDirectory port implementation, adapting `search_clinics` above. */
+export function createOverpassClinicDirectory(): ClinicDirectory {
+  return {
+    search: (location: Coordinates, radiusKm: number): Promise<ClinicSearchResult> =>
+      search_clinics(location, radiusKm),
+  };
 }

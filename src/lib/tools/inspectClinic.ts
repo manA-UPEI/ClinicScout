@@ -1,7 +1,7 @@
 import type { Clinic, ClinicInspection } from "../../domain/entities/clinic.ts";
 import { isOpenNow } from "../../domain/policies/openingHours.ts";
-import { fetchClinicPages } from "./fetchPage.ts";
-import type { FetchedPage } from "./fetchPage.ts";
+import { fetchClinicPages } from "../../infrastructure/web/httpWebsiteFetcher.ts";
+import type { FetchedPage } from "../../infrastructure/web/httpWebsiteFetcher.ts";
 import { generateJson } from "../../infrastructure/llm/geminiJsonClient.ts";
 import type { ResponseSchema } from "../../infrastructure/llm/geminiJsonClient.ts";
 import {
@@ -10,7 +10,7 @@ import {
   INSPECTABLE_FIELDS,
   verifyAgainstPage,
 } from "../../domain/verification/pageEvidence.ts";
-import { TtlCache } from "./cache.ts";
+import { TtlCache } from "../../infrastructure/cache/ttlCache.ts";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 

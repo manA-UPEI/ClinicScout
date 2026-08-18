@@ -1,5 +1,6 @@
 import { AgentError } from "../../domain/entities/errors.ts";
 import type { GeocodedLocation } from "../../domain/entities/clinic.ts";
+import type { Geocoder } from "../../application/ports/geocoder.ts";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 
@@ -42,4 +43,9 @@ export async function geocode(location: string): Promise<GeocodedLocation> {
     lon: Number(results[0].lon),
     display_name: results[0].display_name,
   };
+}
+
+/** The Geocoder port implementation, adapting the plain `geocode` function above. */
+export function createNominatimGeocoder(): Geocoder {
+  return { geocode };
 }

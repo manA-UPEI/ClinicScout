@@ -20,7 +20,7 @@ export interface AgentRunOptions {
   input: InputFormData;
   callModel: ModelCallable;
   onStep: (step: AgentStep) => void;
-  /** Injectable clock, matching the pattern in lib/tools/cache.ts. */
+  /** Injectable clock, matching the pattern in infrastructure/cache/ttlCache.ts. */
   now?: () => number;
   /**
    * Injectable tool dispatch, defaulting to the real registry. Lets a test

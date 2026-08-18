@@ -1,6 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { USER_AGENT } from "./geocode.ts";
+import { USER_AGENT } from "../geo/nominatimGeocoder.ts";
+import type { WebsiteFetcher } from "../../application/ports/websiteFetcher.ts";
 
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_BYTES = 500_000;
@@ -235,4 +236,9 @@ export async function fetchClinicPages(startUrl: string): Promise<FetchedPage[]>
 
   const pages = [landingPage, ...subpages].filter((p): p is FetchedPage => p !== null);
   return pages.slice(0, MAX_INSPECTION_PAGES);
+}
+
+/** The WebsiteFetcher port implementation, adapting `fetchClinicPages` above. */
+export function createHttpWebsiteFetcher(): WebsiteFetcher {
+  return { fetchClinicPages };
 }
