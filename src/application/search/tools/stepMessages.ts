@@ -7,6 +7,7 @@ import type { AgentStep } from "../../../domain/entities/agentRun.ts";
  * message-construction logic is unit-testable on its own.
  */
 
+/** The transparency-log line for one search_clinics call: widened vs. fresh search, a stale-cache warning if relevant, and the resulting counts. */
 export function formatSearchStep(input: {
   radiusKm: number;
   widened: boolean;
@@ -36,6 +37,7 @@ export function formatSearchStep(input: {
   };
 }
 
+/** The transparency-log line for one inspect_clinic_websites call, naming what was confirmed per clinic or saying plainly that nothing was. */
 export function formatInspectStep(
   ids: string[],
   targetCount: number,
