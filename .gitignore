@@ -45,7 +45,7 @@ ANALYSIS.md
 HACKATHON_SUBMISSION.md
 HAPPY_PATH_SCENARIOS.md
 HARD_THINK_SUMMARY.md
-lib/happyPath.test.ts
+src/lib/happyPath.test.ts
 
 # typescript
 *.tsbuildinfo
