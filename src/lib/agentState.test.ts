@@ -7,7 +7,7 @@ import {
   recordInspection,
   recordSearch,
   shortId,
-} from "./agent/state.ts";
+} from "../application/search/agentState.ts";
 import type { Clinic } from "../domain/entities/clinic.ts";
 import type { InputFormData } from "../domain/entities/agentRun.ts";
 

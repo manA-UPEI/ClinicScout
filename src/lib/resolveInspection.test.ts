@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resolveInspection } from "./tools/inspectClinic.ts";
+import { resolveInspection } from "../application/search/inspectClinicUseCase.ts";
 import type { ClinicInspection } from "../domain/entities/clinic.ts";
 
 function empty(): ClinicInspection {

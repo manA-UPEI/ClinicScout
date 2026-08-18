@@ -74,7 +74,9 @@ test("carries alreadyExcluded forward without duplicating or dropping it", () =>
 });
 
 test("the deterministic pipeline and the agent path agree on the same duplicate-chain input", async () => {
-  const { recordSearch, createRunState, eligibleClinics } = await import("./agent/state.ts");
+  const { recordSearch, createRunState, eligibleClinics } = await import(
+    "../application/search/agentState.ts"
+  );
 
   const clinics = [
     clinic(1, { clinic_name: "Acme Fertility", relevance: "specialty", specialty: "Fertility" }),

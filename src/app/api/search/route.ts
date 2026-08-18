@@ -1,4 +1,4 @@
-import { runClinicSearch } from "@/lib/agent";
+import { runClinicSearch } from "@/application/search/runClinicSearchUseCase";
 import { AgentError } from "@/domain/entities/errors";
 import type { AgentStep } from "@/domain/entities/agentRun";
 

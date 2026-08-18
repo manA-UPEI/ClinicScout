@@ -1,12 +1,12 @@
-import { search_clinics } from "../infrastructure/geo/overpassClinicDirectory.ts";
-import { rank_clinics } from "../domain/policies/rankClinics.ts";
-import { partitionBySpecialty } from "../domain/policies/excludeSpecialtyListings.ts";
-import { geocode } from "../infrastructure/geo/nominatimGeocoder.ts";
-import { inspect_clinic, mergeInspection } from "./tools/inspectClinic.ts";
-import { geminiConfigured } from "../infrastructure/llm/geminiJsonClient.ts";
-import { AgentError } from "../domain/entities/errors.ts";
-import type { AgentRunResult, AgentStep, InputFormData, Urgency } from "../domain/entities/agentRun.ts";
-import type { Clinic, RankedClinic } from "../domain/entities/clinic.ts";
+import { search_clinics } from "../../infrastructure/geo/overpassClinicDirectory.ts";
+import { rank_clinics } from "../../domain/policies/rankClinics.ts";
+import { partitionBySpecialty } from "../../domain/policies/excludeSpecialtyListings.ts";
+import { geocode } from "../../infrastructure/geo/nominatimGeocoder.ts";
+import { inspect_clinic, mergeInspection } from "./inspectClinicUseCase.ts";
+import { geminiConfigured } from "../../infrastructure/llm/geminiJsonClient.ts";
+import { AgentError } from "../../domain/entities/errors.ts";
+import type { AgentRunResult, AgentStep, InputFormData, Urgency } from "../../domain/entities/agentRun.ts";
+import type { Clinic, ExcludedSpecialty, GeocodedLocation, RankedClinic } from "../../domain/entities/clinic.ts";
 
 // Inspecting every result in a dense city would mean a hundred page fetches and
 // a minute of waiting; the ranking waterfall only ever promotes from the front
@@ -83,27 +83,25 @@ async function inspectCandidates(
   return clinics.map((c) => byUrl.get(c.source_url) ?? c);
 }
 
-/**
- * The original fixed pipeline, kept as the fallback for when the Gemini
- * orchestrator is unavailable (no key), unreachable, out of quota, or out of
- * time. Behaviour is unchanged; it now also reports steps as they happen so a
- * fallback run streams like an agent run does.
- */
-export async function runDeterministicPipeline(
-  input: InputFormData,
-  onStep: (step: AgentStep) => void = () => {}
-): Promise<AgentRunResult> {
-  const steps: AgentStep[] = [];
-  const emit: Emit = (step) => {
-    steps.push(step);
-    onStep(step);
-  };
-
+/** Step 1: resolve the user's typed location. Throws AgentError if it can't be found. */
+async function resolveLocation(input: InputFormData, emit: Emit): Promise<GeocodedLocation> {
   const place = await geocode(input.location);
   emit({
     id: "geocode",
     message: `📍 Resolved "${input.location}" to ${place.display_name}.`,
   });
+  return place;
+}
+
+/**
+ * Step 2: search the directory and drop specialty listings. Throws AgentError
+ * if nothing comes back, or if everything that did is a specialist service.
+ */
+async function searchAndFilter(
+  place: GeocodedLocation,
+  input: InputFormData,
+  emit: Emit
+): Promise<{ eligible: Clinic[]; excluded: ExcludedSpecialty[] }> {
   emit({
     id: "search",
     message: `🔍 Searching for clinics within ${input.maxRadiusKm} km (${URGENCY_NOTE[input.urgency]})...`,
@@ -152,8 +150,18 @@ export async function runDeterministicPipeline(
     );
   }
 
-  // Rank on directory data first so inspection spends its budget on the
-  // clinics that could plausibly win, then rank again on what the sites said.
+  return { eligible, excluded };
+}
+
+/**
+ * Step 3: rank on directory data first so inspection spends its budget on the
+ * clinics that could plausibly win, then rank again on what the sites said.
+ */
+async function inspectAndRank(
+  eligible: Clinic[],
+  input: InputFormData,
+  emit: Emit
+): Promise<RankedClinic[]> {
   const shortlist = rank_clinics(eligible, input.urgency);
   const enriched = await inspectCandidates(shortlist, emit);
   const ranked = rank_clinics(enriched, input.urgency);
@@ -163,6 +171,29 @@ export async function runDeterministicPipeline(
     id: "recommend",
     message: `🏆 Recommendation ready: ${ranked[0].clinic_name}.`,
   });
+
+  return ranked;
+}
+
+/**
+ * The original fixed pipeline, kept as the fallback for when the Gemini
+ * orchestrator is unavailable (no key), unreachable, out of quota, or out of
+ * time. Behaviour is unchanged; it now also reports steps as they happen so a
+ * fallback run streams like an agent run does.
+ */
+export async function runDeterministicPipeline(
+  input: InputFormData,
+  onStep: (step: AgentStep) => void = () => {}
+): Promise<AgentRunResult> {
+  const steps: AgentStep[] = [];
+  const emit: Emit = (step) => {
+    steps.push(step);
+    onStep(step);
+  };
+
+  const place = await resolveLocation(input, emit);
+  const { eligible, excluded } = await searchAndFilter(place, input, emit);
+  const ranked = await inspectAndRank(eligible, input, emit);
 
   return {
     steps,

@@ -108,19 +108,26 @@ function buildPrompt(clinicName: string, pages: FetchedPage[]): string {
   ].join("\n");
 }
 
-async function inspectLive(clinic: Clinic): Promise<ClinicInspection> {
-  const pages = await fetchClinicPages(clinic.website!);
-  if (pages.length === 0) return EMPTY_INSPECTION;
+/** Reads whatever pages of the clinic's own site are reachable. Empty when the site can't be read at all. */
+async function fetchPagesFor(clinic: Clinic): Promise<FetchedPage[]> {
+  return fetchClinicPages(clinic.website!);
+}
 
-  const raw = await generateJson<Partial<ClinicInspection>>(
-    buildPrompt(clinic.clinic_name, pages),
-    SCHEMA
-  );
-  if (!raw) return EMPTY_INSPECTION;
+/** Asks the model to extract fields from the fetched pages. Null on any model failure. */
+async function extractRaw(
+  clinicName: string,
+  pages: FetchedPage[]
+): Promise<Partial<ClinicInspection> | null> {
+  return generateJson<Partial<ClinicInspection>>(buildPrompt(clinicName, pages), SCHEMA);
+}
 
-  // Quotes are checked against every fetched page at once, so a fact stated on
-  // the /hours page still verifies even though the model saw it alongside the
-  // landing page's text.
+/**
+ * Checks the model's claims against the fetched pages. Quotes are checked
+ * against every fetched page at once, so a fact stated on the /hours page
+ * still verifies even though the model saw it alongside the landing page's
+ * text.
+ */
+function verify(raw: Partial<ClinicInspection>, pages: FetchedPage[]): ClinicInspection {
   const haystack = pages.map((p) => p.text).join("\n");
   const verified = verifyAgainstPage(raw, haystack);
 
@@ -128,6 +135,16 @@ async function inspectLive(clinic: Clinic): Promise<ClinicInspection> {
     ...verified,
     opening_hours_osm: gateOpeningHoursOsm(verified.opening_hours, raw.opening_hours_osm),
   };
+}
+
+async function inspectLive(clinic: Clinic): Promise<ClinicInspection> {
+  const pages = await fetchPagesFor(clinic);
+  if (pages.length === 0) return EMPTY_INSPECTION;
+
+  const raw = await extractRaw(clinic.clinic_name, pages);
+  if (!raw) return EMPTY_INSPECTION;
+
+  return verify(raw, pages);
 }
 
 /**

@@ -1,9 +1,9 @@
 import type { AgentRunResult, AgentStep, InputFormData } from "../../domain/entities/agentRun.ts";
 import { geminiConfigured } from "../../infrastructure/llm/geminiJsonClient.ts";
 import { createGeminiCallable } from "../../infrastructure/llm/geminiFunctionCallClient.ts";
-import { runDeterministicPipeline } from "../runAgent.ts";
-import { runGeminiAgent, SYSTEM_INSTRUCTION } from "./runGeminiAgent.ts";
-import { TOOL_DECLARATIONS } from "./toolRegistry.ts";
+import { runDeterministicPipeline } from "./runDeterministicPipelineUseCase.ts";
+import { runGeminiAgent, SYSTEM_INSTRUCTION } from "./runGeminiAgentUseCase.ts";
+import { TOOL_DECLARATIONS } from "./tools/index.ts";
 
 /** Why the orchestrator was skipped or abandoned, phrased for the user. */
 const FALLBACK_NOTE: Record<string, string> = {

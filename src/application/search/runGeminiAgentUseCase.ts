@@ -1,11 +1,11 @@
 import type { AgentRunResult, AgentStep, InputFormData } from "../../domain/entities/agentRun.ts";
 import type { RankedClinic } from "../../domain/entities/clinic.ts";
-import type { Content, ModelCallable, Part } from "../../infrastructure/llm/geminiFunctionCallClient.ts";
+import type { Content, ModelCallable, ModelTurn, Part } from "../../infrastructure/llm/geminiFunctionCallClient.ts";
 import { rank_clinics } from "../../domain/policies/rankClinics.ts";
-import { executeTool } from "./toolRegistry.ts";
-import type { ToolOutcome } from "./toolRegistry.ts";
-import { createRunState, eligibleClinics, shortId } from "./state.ts";
-import type { RunState } from "./state.ts";
+import { executeTool } from "./tools/index.ts";
+import type { ToolOutcome } from "./tools/index.ts";
+import { createRunState, eligibleClinics, shortId } from "./agentState.ts";
+import type { RunState } from "./agentState.ts";
 
 /** Model turns per run. Each is a network round-trip against the free-tier quota. */
 export const MAX_STEPS = 10;
@@ -151,9 +151,110 @@ function salvage(
   return { ok: true, result: buildResult(state, "deterministic") };
 }
 
+function withinBudget(now: () => number, deadline: number): boolean {
+  return now() <= deadline;
+}
+
+type TextTurnResult =
+  | { action: "continue" }
+  | { action: "return"; outcome: AgentOutcome };
+
+/**
+ * Handles a turn where the model replied in prose instead of calling a tool.
+ * Prose is not a recommendation — nothing in it has been checked against the
+ * record — so a chatty model gets one nudge back toward finalizing before the
+ * run gives up on it. Smaller models in particular tend to narrate a
+ * conclusion and stop.
+ */
+function handleTextTurn(
+  text: string,
+  state: RunState,
+  alreadyNudged: boolean,
+  onStep: (s: AgentStep) => void
+): TextTurnResult {
+  if (state.finalized) {
+    return { action: "return", outcome: { ok: true, result: buildResult(state, "agent") } };
+  }
+
+  if (!alreadyNudged) {
+    return { action: "continue" };
+  }
+
+  return { action: "return", outcome: salvage(state, onStep, "no_finalize") };
+}
+
+/** The nudge pushed into `contents` the first (and only) time a run answers in prose. */
+function nudgeToFinalize(text: string): Content[] {
+  return [
+    { role: "model", parts: [{ text }] },
+    {
+      role: "user",
+      parts: [
+        {
+          text:
+            "You have not finished yet. A written answer is not a recommendation — " +
+            "it is only recorded when you call finalize_recommendation. Call it now " +
+            "with the clinic you chose, a reason, and the cited_fields your reason relies on.",
+        },
+      ],
+    },
+  ];
+}
+
+type RunToolFn = (
+  state: RunState,
+  name: string,
+  args: Record<string, unknown>
+) => Promise<ToolOutcome>;
+
+/**
+ * Fans a "calls" turn out to every tool the model requested in it, streaming a
+ * step per outcome. Gemini 2.5 can emit several functionCall parts in one
+ * turn; executing all of them and replying with all their results in one turn
+ * is the protocol-correct handling — replying to only the first would leave
+ * the rest unanswered and the transcript malformed.
+ */
+async function handleCallsTurn(
+  modelTurn: Extract<ModelTurn, { kind: "calls" }>,
+  state: RunState,
+  runTool: RunToolFn,
+  onStep: (s: AgentStep) => void,
+  turnIndex: number
+): Promise<{ modelParts: Part[]; responseParts: Part[]; done: boolean }> {
+  // Replayed verbatim when the client supplied the raw parts: Gemini 3.x
+  // rejects a functionCall echoed back without its thought signature, and
+  // rebuilding the turn ourselves would strip it.
+  const modelParts = modelTurn.parts ?? modelTurn.calls.map((call) => ({ functionCall: call }));
+
+  // Emit any reasoning text the model included before its tool calls, so the
+  // user sees what it's thinking about rather than just the tool effects.
+  if (modelTurn.parts) {
+    for (const part of modelTurn.parts) {
+      if ("text" in part && part.text) {
+        onStep({ id: `reasoning-${turnIndex}`, message: `🤔 ${part.text}` });
+      }
+    }
+  }
+
+  const responseParts: Part[] = [];
+  let done = false;
+
+  for (const call of modelTurn.calls) {
+    const outcome = await runTool(state, call.name, call.args ?? {});
+    if (outcome.step) onStep(outcome.step);
+    responseParts.push({
+      functionResponse: { name: call.name, response: outcome.response },
+    });
+    if (outcome.done) done = true;
+  }
+
+  return { modelParts, responseParts, done };
+}
+
 /**
  * The orchestrator loop. Gemini chooses the tools; this function only enforces
- * the budget, ferries results back, and streams a step per action.
+ * the budget, ferries results back, and streams a step per action, delegating
+ * the two turn shapes (prose vs. tool calls) to the handlers above.
  *
  * `callModel` is a parameter rather than an import so a test can drive an
  * entire run from a scripted transcript without a key or a network.
@@ -178,7 +279,7 @@ export async function runGeminiAgent(
   let nudged = false;
 
   for (let turn = 0; turn < MAX_STEPS; turn++) {
-    if (now() > deadline) return salvage(state, onStep, "budget");
+    if (!withinBudget(now, deadline)) return salvage(state, onStep, "budget");
 
     const modelTurn = await callModel(contents);
 
@@ -189,66 +290,21 @@ export async function runGeminiAgent(
     }
 
     if (modelTurn.kind === "text") {
-      if (state.finalized) return { ok: true, result: buildResult(state, "agent") };
-
-      // It answered in prose instead of committing. Prose is not a
-      // recommendation — nothing in it has been checked against the record — so
-      // ask once for a real finalization before giving up on the agent path.
-      // Smaller models in particular tend to narrate a conclusion and stop.
-      if (!nudged) {
-        nudged = true;
-        contents.push({ role: "model", parts: [{ text: modelTurn.text }] });
-        contents.push({
-          role: "user",
-          parts: [
-            {
-              text:
-                "You have not finished yet. A written answer is not a recommendation — " +
-                "it is only recorded when you call finalize_recommendation. Call it now " +
-                "with the clinic you chose, a reason, and the cited_fields your reason relies on.",
-            },
-          ],
-        });
-        continue;
-      }
-
-      return salvage(state, onStep, "no_finalize");
+      const result = handleTextTurn(modelTurn.text, state, nudged, onStep);
+      if (result.action === "return") return result.outcome;
+      nudged = true;
+      contents.push(...nudgeToFinalize(modelTurn.text));
+      continue;
     }
 
-    // Replayed verbatim when the client supplied the raw parts: Gemini 3.x
-    // rejects a functionCall echoed back without its thought signature, and
-    // rebuilding the turn ourselves would strip it.
-    const modelParts = modelTurn.parts ?? modelTurn.calls.map((call) => ({ functionCall: call }));
-    contents.push({
-      role: "model",
-      parts: modelParts,
-    });
-
-    // Emit any reasoning text the model included before its tool calls, so the user
-    // sees what it's thinking about rather than just the tool effects.
-    if (modelTurn.parts) {
-      for (const part of modelTurn.parts) {
-        if ("text" in part && part.text) {
-          onStep({
-            id: `reasoning-${turn}`,
-            message: `🤔 ${part.text}`,
-          });
-        }
-      }
-    }
-
-    const responseParts: Part[] = [];
-    let done = false;
-
-    for (const call of modelTurn.calls) {
-      const outcome = await runTool(state, call.name, call.args ?? {});
-      if (outcome.step) onStep(outcome.step);
-      responseParts.push({
-        functionResponse: { name: call.name, response: outcome.response },
-      });
-      if (outcome.done) done = true;
-    }
-
+    const { modelParts, responseParts, done } = await handleCallsTurn(
+      modelTurn,
+      state,
+      runTool,
+      onStep,
+      turn
+    );
+    contents.push({ role: "model", parts: modelParts });
     // Appended even when finishing, so the transcript stays well-formed — every
     // functionCall is answered — for anyone reading a logged run.
     contents.push({ role: "user", parts: responseParts });

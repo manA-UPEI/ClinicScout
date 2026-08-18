@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_STEPS, runGeminiAgent } from "./agent/runGeminiAgent.ts";
-import { recordSearch, shortId } from "./agent/state.ts";
-import type { RunState } from "./agent/state.ts";
-import type { ToolOutcome } from "./agent/toolRegistry.ts";
+import { MAX_STEPS, runGeminiAgent } from "../application/search/runGeminiAgentUseCase.ts";
+import { recordSearch, shortId } from "../application/search/agentState.ts";
+import type { RunState } from "../application/search/agentState.ts";
+import type { ToolOutcome } from "../application/search/tools/index.ts";
 import type { ModelTurn } from "../infrastructure/llm/geminiFunctionCallClient.ts";
 import type { AgentStep, InputFormData } from "../domain/entities/agentRun.ts";
 import type { Clinic } from "../domain/entities/clinic.ts";

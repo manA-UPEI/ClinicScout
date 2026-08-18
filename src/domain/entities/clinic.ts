@@ -104,7 +104,9 @@ export interface RankedClinic extends Clinic {
  *
  * The full source_url is already a stable unique key, but it repeats 30-odd
  * characters of boilerplate per clinic in every tool result the model sees.
- * Moved verbatim from lib/agent/state.ts's `shortId`, renamed for clarity now
+ * Moved verbatim from what was lib/agent/state.ts's `shortId` (now
+ * application/search/agentState.ts, which re-exports this under the old
+ * name), renamed for clarity now
  * that it lives alongside the rest of the Clinic entity.
  */
 export function clinicShortId(sourceUrl: string): string {

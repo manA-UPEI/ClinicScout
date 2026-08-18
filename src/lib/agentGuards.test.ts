@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validateFinalization } from "../application/search/citationGuard.ts";
-import { createRunState, shortId } from "./agent/state.ts";
-import type { RunState } from "./agent/state.ts";
+import { createRunState, shortId } from "../application/search/agentState.ts";
+import type { RunState } from "../application/search/agentState.ts";
 import type { Clinic } from "../domain/entities/clinic.ts";
 import type { InputFormData } from "../domain/entities/agentRun.ts";
 
