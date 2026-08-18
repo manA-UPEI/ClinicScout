@@ -6,7 +6,7 @@ import {
   isIvr,
   isRefusal,
   isVoicemail,
-} from "../domain/services/callScript.ts";
+} from "./callScript.ts";
 
 test("the disclosure is always the first thing said", () => {
   const script = buildScript("Riverside Walk-In Clinic");

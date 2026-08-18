@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { partitionBySpecialty } from "../domain/policies/excludeSpecialtyListings.ts";
-import type { Clinic } from "../domain/entities/clinic.ts";
+import { partitionBySpecialty } from "./excludeSpecialtyListings.ts";
+import type { Clinic } from "../entities/clinic.ts";
 
 function clinic(id: number, overrides: Partial<Clinic> = {}): Clinic {
   return {
@@ -75,7 +75,7 @@ test("carries alreadyExcluded forward without duplicating or dropping it", () =>
 
 test("the deterministic pipeline and the agent path agree on the same duplicate-chain input", async () => {
   const { recordSearch, createRunState, eligibleClinics } = await import(
-    "../application/search/agentState.ts"
+    "../../application/search/agentState.ts"
   );
 
   const clinics = [

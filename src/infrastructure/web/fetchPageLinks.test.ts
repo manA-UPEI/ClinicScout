@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extractRelevantLinks } from "../infrastructure/web/httpWebsiteFetcher.ts";
+import { extractRelevantLinks } from "./httpWebsiteFetcher.ts";
 
 const BASE = "https://example-clinic.org/";
 

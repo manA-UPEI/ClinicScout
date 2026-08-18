@@ -4,8 +4,8 @@ import {
   hasContactChannel,
   isDeadEnd,
   isLocatable,
-} from "../domain/policies/actionability.ts";
-import type { Clinic } from "../domain/entities/clinic.ts";
+} from "./actionability.ts";
+import type { Clinic } from "../entities/clinic.ts";
 
 function clinic(overrides: Partial<Clinic> = {}): Clinic {
   return {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isOpenNow, isValidOpeningHours } from "../domain/policies/openingHours.ts";
+import { isOpenNow, isValidOpeningHours } from "./openingHours.ts";
 
 const WED_1030 = new Date(2026, 7, 12, 10, 30);
 const WED_1230 = new Date(2026, 7, 12, 12, 30);

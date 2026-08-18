@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mergeInspection } from "../application/search/inspectClinicUseCase.ts";
-import type { Clinic, ClinicInspection } from "../domain/entities/clinic.ts";
+import { mergeInspection } from "./inspectClinicUseCase.ts";
+import type { Clinic, ClinicInspection } from "../../domain/entities/clinic.ts";
 
 function clinic(overrides: Partial<Clinic> = {}): Clinic {
   return {

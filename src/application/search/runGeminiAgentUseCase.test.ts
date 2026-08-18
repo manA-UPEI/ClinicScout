@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_STEPS, runGeminiAgent } from "../application/search/runGeminiAgentUseCase.ts";
-import { recordSearch, shortId } from "../application/search/agentState.ts";
-import type { RunState } from "../application/search/agentState.ts";
-import type { ToolOutcome } from "../application/search/tools/index.ts";
-import type { ModelTurn } from "../infrastructure/llm/geminiFunctionCallClient.ts";
-import type { AgentStep, InputFormData } from "../domain/entities/agentRun.ts";
-import type { Clinic } from "../domain/entities/clinic.ts";
+import { MAX_STEPS, runGeminiAgent } from "./runGeminiAgentUseCase.ts";
+import { recordSearch, shortId } from "./agentState.ts";
+import type { RunState } from "./agentState.ts";
+import type { ToolOutcome } from "./tools/index.ts";
+import type { ModelTurn } from "../../infrastructure/llm/geminiFunctionCallClient.ts";
+import type { AgentStep, InputFormData } from "../../domain/entities/agentRun.ts";
+import type { Clinic } from "../../domain/entities/clinic.ts";
 
 const INPUT: InputFormData = {
   location: "Charlottetown, PEI",

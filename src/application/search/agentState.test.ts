@@ -7,9 +7,9 @@ import {
   recordInspection,
   recordSearch,
   shortId,
-} from "../application/search/agentState.ts";
-import type { Clinic } from "../domain/entities/clinic.ts";
-import type { InputFormData } from "../domain/entities/agentRun.ts";
+} from "./agentState.ts";
+import type { Clinic } from "../../domain/entities/clinic.ts";
+import type { InputFormData } from "../../domain/entities/agentRun.ts";
 
 const INPUT: InputFormData = {
   location: "Charlottetown, PEI",

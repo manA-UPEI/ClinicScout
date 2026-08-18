@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cacheKey, TtlCache } from "../infrastructure/cache/ttlCache.ts";
+import { cacheKey, TtlCache } from "./ttlCache.ts";
 
 test("returns a fresh value before expiry", () => {
   let now = 1000;
