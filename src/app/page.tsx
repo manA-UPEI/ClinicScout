@@ -15,6 +15,7 @@ type Phase = "input" | "searching" | "progress" | "recommendation" | "error";
 interface ErrorInfo {
   kind: AgentErrorKind;
   message: string;
+  requestId?: string;
 }
 
 export default function Page() {
@@ -46,7 +47,11 @@ export default function Page() {
         }
       },
       onError: (error) => {
-        setError({ kind: (error.kind as AgentErrorKind) ?? "network", message: error.message });
+        setError({
+          kind: (error.kind as AgentErrorKind) ?? "network",
+          message: error.message,
+          requestId: error.requestId,
+        });
         setPhase("error");
       },
     });
@@ -69,6 +74,7 @@ export default function Page() {
         <ErrorState
           kind={error.kind}
           message={error.message}
+          requestId={error.requestId}
           onRetry={handleStartOver}
         />
       )}

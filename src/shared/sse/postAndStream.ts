@@ -4,6 +4,8 @@ import type { SseEvent } from "./sseFrame.ts";
 export interface StreamedError {
   kind?: string;
   message: string;
+  /** Short id the server logged alongside this failure, so it can be quoted back for support. */
+  requestId?: string;
 }
 
 export type PostAndStreamOutcome =

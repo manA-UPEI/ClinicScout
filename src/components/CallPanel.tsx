@@ -14,6 +14,11 @@ interface Props {
   clinic: Clinic;
 }
 
+/** CallPanel has no structured error component, so a request id is appended inline rather than shown separately. */
+function formatError(message: string, requestId?: string): string {
+  return requestId ? `${message} (ref: ${requestId})` : message;
+}
+
 type Phase = "idle" | "consent" | "calling" | "done";
 
 /**
@@ -60,12 +65,13 @@ export default function CallPanel({ clinic }: Props) {
             setOutcome((event.data as { outcome: CallOutcome }).outcome);
             setPhase("done");
           } else if (event.event === "error") {
-            setError((event.data as { message: string }).message);
+            const data = event.data as { message: string; requestId?: string };
+            setError(formatError(data.message, data.requestId));
             setPhase("done");
           }
         },
         onError: (error) => {
-          setError(error.message);
+          setError(formatError(error.message, error.requestId));
           setPhase("done");
         },
         // An abort is the user hanging up, which CallProgress already
