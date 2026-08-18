@@ -1,26 +1,15 @@
 import { createSession, CallError, transition } from "@/application/call/callSessionService";
 import { createMockProvider } from "@/infrastructure/call/mockCallProvider";
 import { runCall } from "@/application/call/placeCallUseCase";
-import type { PersonaId } from "@/infrastructure/call/mockCallProvider";
+import { parseCallRequest } from "@/application/call/parseCallRequest";
+import type { CallRequestBody } from "@/application/call/parseCallRequest";
+import { createSseResponse } from "@/interface/http/sseResponse";
+import { badRequest } from "@/interface/http/errors";
 
 // A mock call is capped at 45s (MAX_CALL_MS) so it fits inside one request.
 // A real call cannot, which is the single biggest thing Phase 2 has to solve:
 // live telephony needs webhooks plus a durable session, not a held-open stream.
 export const maxDuration = 60;
-
-interface CallRequest {
-  clinicId?: string;
-  clinicName?: string;
-  phone?: string;
-  /** Must be explicitly true — see the consent check below. */
-  consented?: boolean;
-  /** Demo/testing only: forces which scripted receptionist answers. */
-  persona?: PersonaId;
-}
-
-function bad(kind: string, message: string, status: number) {
-  return Response.json({ error: { kind, message } }, { status });
-}
 
 /**
  * Places a call to a clinic and streams the conversation back as it happens.
@@ -35,95 +24,52 @@ function bad(kind: string, message: string, status: number) {
  * needs no separate endpoint and cannot get out of sync with the stream.
  */
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as CallRequest | null;
+  const body = (await request.json().catch(() => null)) as CallRequestBody | null;
 
-  // Consent is a required field rather than an assumed default. Placing an
-  // automated call is not something to fall into because a flag was missing.
-  if (body?.consented !== true) {
-    return bad(
-      "not_consented",
-      "A call can only be placed after you approve the script.",
-      400
-    );
-  }
-
-  const clinicName = body.clinicName?.trim();
-  const phone = body.phone?.trim();
-  const clinicId = body.clinicId?.trim();
-
-  if (!clinicId || !clinicName || !phone) {
-    return bad("invalid", "Missing clinic details for the call.", 400);
-  }
+  const parsed = parseCallRequest(body);
+  if (!parsed.ok) return badRequest(parsed.kind, parsed.message, parsed.status);
+  const { clinicId, clinicName, phone, persona } = parsed.request;
 
   let session;
   try {
     session = createSession({ clinicId, clinicName, phone });
   } catch (e) {
     if (e instanceof CallError && e.kind === "already_active") {
-      return bad(e.kind, e.message, 409);
+      return badRequest(e.kind, e.message, 409);
     }
     throw e;
   }
 
-  const encoder = new TextEncoder();
-  const provider = createMockProvider(
-    body.persona ? { persona: body.persona } : {}
-  );
+  const provider = createMockProvider(persona ? { persona } : {});
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let closed = false;
-      const send = (event: string, data: unknown) => {
-        if (closed) return;
-        controller.enqueue(
-          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-        );
-      };
+  return createSseResponse(request.signal, async (send, signal) => {
+    // The client going away is a hang-up, not just a dead socket: the person
+    // the agent was speaking for has left, so the call should end too.
+    const hangup = new AbortController();
+    signal.addEventListener("abort", () => hangup.abort());
 
-      // The client going away is a hang-up, not just a dead socket: the person
-      // the agent was speaking for has left, so the call should end too.
-      const hangup = new AbortController();
-      const onAbort = () => {
-        closed = true;
-        hangup.abort();
-      };
-      request.signal.addEventListener("abort", onAbort);
+    send("session", { id: session.id, clinicName: session.clinicName });
 
-      send("session", { id: session.id, clinicName: session.clinicName });
-
+    try {
+      await runCall(
+        session,
+        provider,
+        (event) => send(event.kind, event),
+        hangup.signal
+      );
+    } catch (e) {
+      console.error("Unexpected call failure:", e);
+      // Leave the session in a terminal state rather than stuck mid-call,
+      // so the one-active-call-per-clinic rail cannot deadlock a clinic.
       try {
-        await runCall(
-          session,
-          provider,
-          (event) => send(event.kind, event),
-          hangup.signal
-        );
-      } catch (e) {
-        console.error("Unexpected call failure:", e);
-        // Leave the session in a terminal state rather than stuck mid-call,
-        // so the one-active-call-per-clinic rail cannot deadlock a clinic.
-        try {
-          transition(session, "failed");
-        } catch {
-          // Already terminal — nothing to correct.
-        }
-        send("error", {
-          kind: "failed",
-          message: "The call ended unexpectedly.",
-        });
-      } finally {
-        request.signal.removeEventListener("abort", onAbort);
-        if (!closed) controller.close();
-        closed = true;
+        transition(session, "failed");
+      } catch {
+        // Already terminal — nothing to correct.
       }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
+      send("error", {
+        kind: "failed",
+        message: "The call ended unexpectedly.",
+      });
+    }
   });
 }
