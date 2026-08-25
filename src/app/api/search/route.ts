@@ -1,4 +1,5 @@
 import { runClinicSearch } from "@/application/search/runClinicSearchUseCase";
+import { parseSearchRequest } from "@/application/search/parseSearchRequest";
 import { AgentError } from "@/domain/entities/errors";
 import type { AgentStep } from "@/domain/entities/agentRun";
 import { createSseResponse } from "@/interface/http/sseResponse";
@@ -36,11 +37,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const input = await request.json().catch(() => null);
+  const body = await request.json().catch(() => null);
 
-  if (!input?.location?.trim()) {
-    return badRequest("location_not_found", "Please enter a location.", 400, requestId);
-  }
+  const parsed = parseSearchRequest(body);
+  if (!parsed.ok) return badRequest(parsed.kind, parsed.message, parsed.status, requestId);
+  const input = parsed.request;
 
   // Streamed rather than returned whole: an agent run's length depends on how
   // many tools it decides to call, so the old "wait, then replay a canned

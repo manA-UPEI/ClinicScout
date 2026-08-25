@@ -1,4 +1,9 @@
-export type AgentErrorKind = "location_not_found" | "network" | "no_results" | "rate_limited";
+export type AgentErrorKind =
+  | "location_not_found"
+  | "network"
+  | "no_results"
+  | "rate_limited"
+  | "invalid_input";
 
 export class AgentError extends Error {
   kind: AgentErrorKind;

@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { InputFormData, Urgency } from "@/domain/entities/agentRun";
+import { MAX_LOCATION_LENGTH } from "@/application/search/parseSearchRequest";
 
 interface Props {
   onSubmit: (data: InputFormData) => void;
@@ -37,6 +38,7 @@ export default function InputForm({ onSubmit }: Props) {
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           placeholder="e.g. Charlottetown, PEI"
+          maxLength={MAX_LOCATION_LENGTH}
           required
           className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-500"
         />

@@ -13,6 +13,7 @@ const HEADINGS: Record<AgentErrorKind, string> = {
   no_results: "No clinics found nearby",
   network: "Something went wrong",
   rate_limited: "Too many searches",
+  invalid_input: "There's a problem with your search",
 };
 
 export default function ErrorState({ kind, message, requestId, onRetry }: Props) {
