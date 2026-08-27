@@ -30,6 +30,9 @@ function fakeTransport(): RedisTransport {
     async ttl() {
       return null;
     },
+    async eval() {
+      return null;
+    },
   };
 }
 
