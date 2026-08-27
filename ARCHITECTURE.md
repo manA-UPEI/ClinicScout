@@ -106,6 +106,63 @@ widened re-search with their inspection results intact), excluded specialty
 listings, the radius actually searched, which clinics have been inspected, and
 the finalization once accepted.
 
+## Accounts
+
+Optional, and free to run: Auth.js (next-auth v5) with OAuth providers and no
+database. The session is a signed, encrypted cookie and nothing else — there
+is no user table, no session table, and nothing about a visitor stored
+server-side.
+
+**Anonymous is a supported tier, not a broken state.** A deployment with no
+`AUTH_SECRET` and no provider credentials behaves exactly as the app did
+before accounts existed, down to the sign-in link not rendering at all. Which
+state a deployment is in is visible at `GET /api/health` (`authConfigured`,
+`authProviders`), because the UI degrades silently by design and a monitor
+should not have to infer it.
+
+**The subject is `provider:providerAccountId`** — `github:12345` — built in
+[infrastructure/auth/sessionUser.ts](src/infrastructure/auth/sessionUser.ts).
+Namespaced because there is no database and therefore no account linking: the
+same person signing in with GitHub and with Google is two subjects. As the
+rate-limit key that Phase 2 builds on, this means one person can hold two
+buckets — 2x quota, not unlimited. Keying on email instead would collapse the
+two, at the cost of letting a provider that returns an address it never
+verified sit in someone else's bucket. The account id is the field a provider
+guarantees is stable and the user cannot choose, so it wins; linking properly
+is work for whenever a user table exists.
+
+A session with no usable id maps to `null` rather than to a signed-in user
+with a blank key, for the same reason: every such caller would otherwise share
+one bucket, which is the bug `clientIp()`'s `"unknown"` fallback already has
+on the anonymous path.
+
+**No client-side auth SDK, deliberately.** OAuth here is redirects plus a
+server-to-server token exchange, so it adds no `script-src` and no
+`connect-src` origin to the CSP in `next.config.ts` — only the two authorize
+endpoints under `form-action`, and only because the CSP3 spec and browsers
+disagree about whether `form-action` re-checks a redirect. A hosted auth
+widget would have cost both directives. Sign-in and sign-out use Auth.js's
+own built-in pages, so this phase ships no client JS, no `SessionProvider`,
+and no server actions for auth.
+
+**One deliberate layering exception.**
+[application/auth/getCurrentUser.ts](src/application/auth/getCurrentUser.ts)
+wires its own adapter rather than receiving one, the same shape
+`runClinicSearchUseCase.ts` already uses for the Gemini client. Server
+components have no composition root to be injected from, and the ESLint
+boundary rule correctly forbids `components/`/`app/` importing an
+infrastructure adapter directly — so the use-case entry point is where the
+wiring has to live.
+
+**A build-time footgun worth knowing.** Whether `/` renders statically or
+dynamically is decided at build time: with no providers configured,
+`isSignInAvailable()` short-circuits before anything reads cookies and the
+page stays static. Configure auth only at runtime and the page is already
+baked static, so the sign-in link never appears even though `/api/health`
+reports `authConfigured: true`. On Vercel the variables are present at build
+too, so this resolves itself; anywhere that separates build and runtime
+environments, set them for both.
+
 ## The fact firewall
 
 Two places ask the same question — is there anything behind this claim? — and
@@ -301,7 +358,8 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [components/ActionPanel.tsx](src/components/ActionPanel.tsx) | Renders whichever next action `determineAction` selected |
 | [components/EmailDraftModal.tsx](src/components/EmailDraftModal.tsx) | Editable draft, explicitly mocked — nothing is ever sent |
 | [components/EmergencyBanner.tsx](src/components/EmergencyBanner.tsx) | Sits above results when the request is emergency-adjacent |
-| [components/Footer.tsx](src/components/Footer.tsx) | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished; the emergency-services and search-location-privacy disclaimer |
+| [components/AuthStatus.tsx](src/components/AuthStatus.tsx) | Rendered in `app/layout.tsx` — who you are and the one link that changes it; renders nothing at all when no OAuth provider is configured |
+| [components/Footer.tsx](src/components/Footer.tsx) | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished; the emergency-services, search-location-privacy and account-data disclaimer |
 | [components/ErrorState.tsx](src/components/ErrorState.tsx) | Renders an `AgentError` by kind, with a retry |
 | [components/hooks/useStreamedSse.ts](src/components/hooks/useStreamedSse.ts) | Owns one POST-and-stream-SSE request's `AbortController`; used by both the search flow and `CallPanel` |
 | [shared/sse/postAndStream.ts](src/shared/sse/postAndStream.ts) | The framework-agnostic fetch + content-type check + SSE read loop the hook wraps |
@@ -313,7 +371,8 @@ is never a reason to prefer a clinic; it is the absence of one.
 | Module | Role |
 |---|---|
 | [app/api/search/route.ts](src/app/api/search/route.ts) | Thin controller: parse → validate shape → `runClinicSearch` → SSE-frame events |
-| [app/api/health/route.ts](src/app/api/health/route.ts) | Reports configuration (Gemini configured, shared-state backend) for an external uptime check — not a live ping of every upstream |
+| [app/api/health/route.ts](src/app/api/health/route.ts) | Reports configuration (Gemini configured, shared-state backend, whether sign-in is possible and with which providers) for an external uptime check — not a live ping of every upstream |
+| [app/api/auth/[...nextauth]/route.ts](src/app/api/auth/%5B...nextauth%5D/route.ts) | Auth.js's own sign-in, callback, sign-out, session and CSRF endpoints; the app writes no auth UI of its own |
 | [interface/http/sseResponse.ts](src/interface/http/sseResponse.ts) | Shared `ReadableStream`/encoder/abort-listener/close boilerplate for both SSE routes |
 | [interface/http/errors.ts](src/interface/http/errors.ts) | Shared JSON error responder |
 | [interface/http/requestId.ts](src/interface/http/requestId.ts) | One id per request, carried in every error payload and its matching `console.error` line — the thing that makes a user-reported failure findable in logs |
@@ -336,7 +395,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 
 | Module | Role |
 |---|---|
-| [application/ports/*.ts](src/application/ports/) | `Geocoder`, `ClinicDirectory`, `WebsiteFetcher`, `JsonExtractionModel`, `FunctionCallingModel`, `CallProvider`, `CallSessionStore`, `ConfigProvider`, `Clock` — the seams infrastructure adapters implement |
+| [application/ports/*.ts](src/application/ports/) | `Geocoder`, `ClinicDirectory`, `WebsiteFetcher`, `JsonExtractionModel`, `FunctionCallingModel`, `CallProvider`, `CallSessionStore`, `ConfigProvider`, `SessionReader`, `Clock` — the seams infrastructure adapters implement |
 
 ### Domain — entities, policies, verification
 
@@ -376,6 +435,10 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [infrastructure/ratelimit/fixedWindowRateLimiter.ts](src/infrastructure/ratelimit/fixedWindowRateLimiter.ts) | In-memory `RateLimiter`; single-process only — the same caveat as `TtlCache` |
 | [infrastructure/ratelimit/redisRateLimiter.ts](src/infrastructure/ratelimit/redisRateLimiter.ts) | Redis-backed `RateLimiter` — one INCR+EXPIRE counter shared across every serverless instance, which the in-memory version can't offer |
 | [infrastructure/ratelimit/createRateLimiter.ts](src/infrastructure/ratelimit/createRateLimiter.ts) | Picks Redis when configured, else the in-memory limiter — used by both `/api/search` and `/api/call` |
+| [infrastructure/auth/nextAuth.ts](src/infrastructure/auth/nextAuth.ts) | The only module that imports `next-auth`; registers whichever OAuth providers have credentials and stamps the provider-namespaced subject onto the token |
+| [infrastructure/auth/sessionUser.ts](src/infrastructure/auth/sessionUser.ts) | Pure session→`AuthenticatedUser` mapping and the subject format; structurally typed so it — and its tests — never load `next-auth` |
+| [infrastructure/auth/authJsSessionReader.ts](src/infrastructure/auth/authJsSessionReader.ts) | Implements `SessionReader` over `auth()`; an unverifiable cookie lands on the anonymous path rather than raising |
+| [infrastructure/config/authProviders.ts](src/infrastructure/config/authProviders.ts) | The one place `AUTH_SECRET` and the `AUTH_<PROVIDER>_ID`/`_SECRET` pairs are read; used by `nextAuth.ts` and `/api/health` |
 | [infrastructure/logging/logger.ts](src/infrastructure/logging/logger.ts) | Shared pino logger — JSON in production, pretty-printed in dev; every prior `console.error` now logs structured fields (e.g. the request id) instead of interpolating them into a string |
 | [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts) | Call subsystem provider adapter (see Agent-placed calls, above) |
 

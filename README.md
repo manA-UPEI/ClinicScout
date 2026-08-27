@@ -28,6 +28,10 @@ npm run dev
 The app runs without a key — it just skips website inspection, and any field the
 directory data doesn't cover stays "Unknown".
 
+Accounts are optional too, and off until you configure them. See
+[Signing in](#signing-in) below; with nothing set, every visitor is anonymous
+and the sign-in link does not render.
+
 ## How it works
 
 Gemini runs the search as an **agent**: it decides which tools to call, in what
@@ -249,6 +253,38 @@ Known limits, stated plainly:
   reviewable.
 - OSM data can be stale or incomplete. The UI says to call ahead.
 
+## Signing in
+
+Optional, free, and stateless: [Auth.js](https://authjs.dev) with GitHub
+and/or Google OAuth, no database. The session is a signed, encrypted cookie —
+there is no user table and nothing about you is stored server-side. Anonymous
+access is a supported tier, not a degraded one, so leaving all of this unset
+is a perfectly valid way to run the app.
+
+To turn it on, set `AUTH_SECRET` plus at least one provider pair — see the
+"Accounts" block in `.env.local.example` for the exact variables and where to
+register the OAuth app. Either provider alone is fine; one that is missing
+half its pair is skipped rather than offered as a button that errors.
+
+```bash
+openssl rand -base64 32   # AUTH_SECRET
+```
+
+Rotating `AUTH_SECRET` invalidates every session at once, which is the
+intended emergency lever.
+
+Because there is no database, there is no account linking: signing in with
+GitHub and with Google gives you two separate identities. That is a deliberate
+trade — see ARCHITECTURE.md's "Accounts" section for why the account id wins
+over the email address as the identifier.
+
+**Confirm it actually took**: `GET /api/health` reports `authConfigured` and
+lists `authProviders`. One gotcha specific to auth — whether the home page
+renders statically or dynamically is decided at *build* time, so if you set
+these variables only in a runtime environment, the sign-in link will never
+appear even though `/api/health` says it is configured. On Vercel the
+variables are present at build too, so this resolves itself.
+
 ## Deploying
 
 Everything about this app assumes Vercel — the `maxDuration = 60` budgets in
@@ -257,6 +293,10 @@ function.
 
 **Set `GEMINI_API_KEY`** as a Vercel environment variable, the same key as
 local dev.
+
+**Set `AUTH_SECRET` and your provider credentials** if you want accounts —
+see [Signing in](#signing-in). Skip them and the deployment runs
+anonymous-only, which is a supported configuration.
 
 **Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`** before
 sending it any real traffic. Without them, three things quietly degrade the

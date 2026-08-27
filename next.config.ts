@@ -4,7 +4,10 @@ const isDev = process.env.NODE_ENV !== "production";
 
 // All four external services (Nominatim, Overpass, Gemini, clinic websites)
 // are called server-side only — see ARCHITECTURE.md's "External services"
-// table — so the client never needs connect-src beyond its own origin.
+// table — so the client never needs connect-src beyond its own origin. Auth
+// runs server-side too: OAuth is redirects and server-to-server token
+// exchange, so it adds no script-src or connect-src origin either. A hosted
+// auth widget would have cost both.
 // 'unsafe-inline' covers Next's own hydration script/style tags and JSX
 // `style={}` attributes; tightening to a per-request nonce is future work,
 // not needed for this first pass. 'unsafe-eval' is dev-only — Fast Refresh
@@ -18,7 +21,13 @@ const csp = [
   `connect-src 'self'${isDev ? " ws:" : ""}`,
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  // The OAuth authorize endpoints sign-in submits into. Auth.js answers its
+  // own same-origin form POST with a 302 to the provider, and the CSP3 spec
+  // and browsers disagree about whether form-action re-checks a redirect —
+  // Chrome does not, Firefox historically has. Naming the two origins costs
+  // nothing and removes the disagreement. Sign-in is the only form in the app
+  // that leaves the origin; everything else stays on 'self'.
+  "form-action 'self' https://github.com https://accounts.google.com",
   "frame-ancestors 'none'",
 ].join("; ");
 

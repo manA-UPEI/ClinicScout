@@ -16,9 +16,14 @@ export default function Footer() {
       <p className="mt-1.5">
         Your typed location is used only to run this search — sent to
         OpenStreetMap and Google to find and verify clinics, and cached for up
-        to 24 hours so a repeat search is faster. There are no accounts, so it
-        is never linked to an identity, and it is not used for anything beyond
-        answering this search.
+        to 24 hours so a repeat search is faster. It is not used for anything
+        beyond answering this search.
+      </p>
+      <p className="mt-1.5">
+        Signing in is optional and the app works without it. If you do, your
+        browser holds a signed session cookie carrying an identifier from your
+        provider — never a password — and that is the whole of what is kept
+        about you. Your searches are not recorded against it.
       </p>
     </footer>
   );

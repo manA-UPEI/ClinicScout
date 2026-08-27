@@ -1,5 +1,9 @@
 import { createEnvConfigProvider } from "@/infrastructure/config/env";
 import { readRedisConfig } from "@/infrastructure/config/redisConfig";
+import {
+  isAuthConfigured,
+  readConfiguredAuthProviders,
+} from "@/infrastructure/config/authProviders";
 
 // Never cached — a stale "healthy" reading defeats the point of an uptime
 // check, and this route does no expensive work that caching would save.
@@ -18,6 +22,14 @@ export const dynamic = "force-dynamic";
  * limiter — since they all switch on the same two env vars together. On
  * "memory", none of the three hold correctly across more than one
  * serverless instance; see ARCHITECTURE.md.
+ *
+ * `authConfigured` is false whenever AUTH_SECRET is missing or no OAuth
+ * provider has both halves of its credentials — the state where the app
+ * still serves every anonymous visitor normally but nobody can sign in.
+ * That degradation is silent by design in the UI (the sign-in link simply
+ * doesn't render), which is exactly why a monitor should be able to see it.
+ * `authProviders` names which ones are usable; it reveals nothing the
+ * sign-in page doesn't already list.
  */
 export async function GET() {
   const config = createEnvConfigProvider();
@@ -26,5 +38,7 @@ export async function GET() {
     status: "ok",
     geminiConfigured: config.isGeminiConfigured(),
     sharedStateBackend: readRedisConfig() ? "redis" : "memory",
+    authConfigured: isAuthConfigured(),
+    authProviders: readConfiguredAuthProviders(),
   });
 }
