@@ -1,6 +1,7 @@
 import type { AgentRunResult, AgentStep, InputFormData } from "../../domain/entities/agentRun.ts";
-import { geminiConfigured } from "../../infrastructure/llm/geminiJsonClient.ts";
-import { createGeminiCallable } from "../../infrastructure/llm/geminiFunctionCallClient.ts";
+import { geminiConfigured } from "../../infrastructure/llm/createJsonExtractionModel.ts";
+import { fixturesEnabled } from "../../infrastructure/config/fixtureMode.ts";
+import { createCallable } from "../../infrastructure/llm/createFunctionCallingModel.ts";
 import { runDeterministicPipeline } from "./runDeterministicPipelineUseCase.ts";
 import { runGeminiAgent, SYSTEM_INSTRUCTION } from "./runGeminiAgentUseCase.ts";
 import { TOOL_DECLARATIONS } from "./tools/index.ts";
@@ -42,6 +43,18 @@ export async function runClinicSearch(
     onStep(step);
   };
 
+  // First line of the transparency log, before anything else it says about
+  // the run — the log is where this app explains where every fact came from,
+  // so "all of them are invented" belongs at the top of it rather than
+  // somewhere further down among the real-looking steps.
+  if (fixturesEnabled()) {
+    emit({
+      id: "fixtures",
+      message:
+        "🧪 Fixture mode — clinics, websites and model replies are all canned test data, not real.",
+    });
+  }
+
   if (!geminiConfigured()) {
     emit({ id: "mode", message: fallbackNote("no_api_key") });
     const result = await runDeterministicPipeline(input, emit);
@@ -52,7 +65,7 @@ export async function runClinicSearch(
 
   const outcome = await runGeminiAgent({
     input,
-    callModel: createGeminiCallable({
+    callModel: createCallable({
       systemInstruction: SYSTEM_INSTRUCTION,
       functionDeclarations: TOOL_DECLARATIONS,
     }),

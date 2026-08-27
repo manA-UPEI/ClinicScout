@@ -1,4 +1,4 @@
-import { search_clinics } from "../../../infrastructure/geo/overpassClinicDirectory.ts";
+import { search_clinics } from "../../../infrastructure/geo/createClinicDirectory.ts";
 import { eligibleClinics, project, recordSearch } from "../agentState.ts";
 import { fail } from "./shared.ts";
 import type { AgentTool } from "./shared.ts";

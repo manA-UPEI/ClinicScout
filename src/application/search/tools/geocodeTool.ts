@@ -1,4 +1,4 @@
-import { geocode } from "../../../infrastructure/geo/nominatimGeocoder.ts";
+import { geocode } from "../../../infrastructure/geo/createGeocoder.ts";
 import type { AgentTool } from "./shared.ts";
 
 export const geocodeTool: AgentTool = {

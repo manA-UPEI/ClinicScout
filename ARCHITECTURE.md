@@ -163,6 +163,39 @@ reports `authConfigured: true`. On Vercel the variables are present at build
 too, so this resolves itself; anywhere that separates build and runtime
 environments, set them for both.
 
+## Fixture mode
+
+`USE_FIXTURES=1` replaces all five upstreams — geocoder, clinic directory,
+website fetcher, and both Gemini clients — with canned stand-ins, so the whole
+app including the agent loop runs with no API quota spent and no load on
+Nominatim or Overpass. Selection happens in a `createX.ts` per port, the same
+shape [createCache.ts](src/infrastructure/cache/createCache.ts) already used.
+
+It covers all five together on purpose: a half-faked run still burns quota,
+which defeats the point.
+
+**The scripted agent is not a recording.** The fixture `ModelCallable` re-reads
+the transcript it is handed each turn and picks its next tool from what has
+already answered, taking clinic ids, ranking order and confirmed fields out of
+the *real* tool responses. So a fixture run exercises the genuine tools, run
+state, quote-verification firewall and citation guard — it just supplies the
+model's side of the conversation. It also cannot drift out of sync with a loop
+that retries a turn or fans several calls into one.
+
+**The canned extractions go through the same firewall as a real model's.**
+A quote that drifted out of agreement with its fixture page would have its
+field discarded and render as Unknown — the fixture would fail exactly the way
+a hallucinating model fails. A test asserts every canned quote still verifies,
+so that drift shows up as a red test rather than as an app that looks broken.
+
+**It is loud rather than locked.** Testing a production build offline is a
+real need, so the mode is not blocked in production builds — which makes
+accidental enablement the risk to manage instead. For an app that tells people
+where to seek medical care, serving invented clinics unnoticed is a genuinely
+bad outcome, so fixture mode announces itself four ways: an undismissable
+banner on every page, the first line of the run's own step log, `upstreams:
+"fixtures"` at `GET /api/health`, and a warning logged once per process.
+
 ## The fact firewall
 
 Two places ask the same question — is there anything behind this claim? — and
@@ -358,6 +391,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [components/ActionPanel.tsx](src/components/ActionPanel.tsx) | Renders whichever next action `determineAction` selected |
 | [components/EmailDraftModal.tsx](src/components/EmailDraftModal.tsx) | Editable draft, explicitly mocked — nothing is ever sent |
 | [components/EmergencyBanner.tsx](src/components/EmergencyBanner.tsx) | Sits above results when the request is emergency-adjacent |
+| [components/FixtureBanner.tsx](src/components/FixtureBanner.tsx) | Unmissable warning across every page when `USE_FIXTURES` is on and nothing rendered is real |
 | [components/AuthStatus.tsx](src/components/AuthStatus.tsx) | Rendered in `app/layout.tsx` — who you are and the one link that changes it; renders nothing at all when no OAuth provider is configured |
 | [components/Footer.tsx](src/components/Footer.tsx) | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished; the emergency-services, search-location-privacy and account-data disclaimer |
 | [components/ErrorState.tsx](src/components/ErrorState.tsx) | Renders an `AgentError` by kind, with a retry |
@@ -439,6 +473,9 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [infrastructure/auth/sessionUser.ts](src/infrastructure/auth/sessionUser.ts) | Pure session→`AuthenticatedUser` mapping and the subject format; structurally typed so it — and its tests — never load `next-auth` |
 | [infrastructure/auth/authJsSessionReader.ts](src/infrastructure/auth/authJsSessionReader.ts) | Implements `SessionReader` over `auth()`; an unverifiable cookie lands on the anonymous path rather than raising |
 | [infrastructure/config/authProviders.ts](src/infrastructure/config/authProviders.ts) | The one place `AUTH_SECRET` and the `AUTH_<PROVIDER>_ID`/`_SECRET` pairs are read; used by `nextAuth.ts` and `/api/health` |
+| [infrastructure/config/fixtureMode.ts](src/infrastructure/config/fixtureMode.ts) | The one place `USE_FIXTURES` is read; warns once per process when it is on |
+| [infrastructure/fixtures/*.ts](src/infrastructure/fixtures/) | Canned stand-ins for all five upstreams — geocoder, clinic directory, website fetcher, and both Gemini clients |
+| [infrastructure/geo/createGeocoder.ts](src/infrastructure/geo/createGeocoder.ts), [createClinicDirectory.ts](src/infrastructure/geo/createClinicDirectory.ts), [web/createWebsiteFetcher.ts](src/infrastructure/web/createWebsiteFetcher.ts), [llm/createJsonExtractionModel.ts](src/infrastructure/llm/createJsonExtractionModel.ts), [llm/createFunctionCallingModel.ts](src/infrastructure/llm/createFunctionCallingModel.ts) | Fixture-or-live selection, one per port — the same shape as `createCache.ts` |
 | [infrastructure/logging/logger.ts](src/infrastructure/logging/logger.ts) | Shared pino logger — JSON in production, pretty-printed in dev; every prior `console.error` now logs structured fields (e.g. the request id) instead of interpolating them into a string |
 | [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts) | Call subsystem provider adapter (see Agent-placed calls, above) |
 

@@ -1,5 +1,6 @@
 import { createEnvConfigProvider } from "@/infrastructure/config/env";
 import { readRedisConfig } from "@/infrastructure/config/redisConfig";
+import { fixturesEnabled } from "@/infrastructure/config/fixtureMode";
 import {
   isAuthConfigured,
   readConfiguredAuthProviders,
@@ -30,6 +31,11 @@ export const dynamic = "force-dynamic";
  * doesn't render), which is exactly why a monitor should be able to see it.
  * `authProviders` names which ones are usable; it reveals nothing the
  * sign-in page doesn't already list.
+ *
+ * `upstreams` is `"fixtures"` when USE_FIXTURES is on and every clinic,
+ * website and model reply is invented. A deployment serving the public should
+ * never report anything but `"live"` here — it is the machine-readable half
+ * of the banner the app paints across every page in that mode.
  */
 export async function GET() {
   const config = createEnvConfigProvider();
@@ -40,5 +46,6 @@ export async function GET() {
     sharedStateBackend: readRedisConfig() ? "redis" : "memory",
     authConfigured: isAuthConfigured(),
     authProviders: readConfiguredAuthProviders(),
+    upstreams: fixturesEnabled() ? "fixtures" : "live",
   });
 }

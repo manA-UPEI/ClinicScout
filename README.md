@@ -285,6 +285,32 @@ these variables only in a runtime environment, the sign-in link will never
 appear even though `/api/health` says it is configured. On Vercel the
 variables are present at build too, so this resolves itself.
 
+## Running without spending API quota
+
+`USE_FIXTURES=1` swaps every upstream — geocoding, the clinic directory,
+clinic websites, and both Gemini calls — for canned test data. The whole app
+runs, agent loop included, with no API key needed, no free-tier quota spent,
+and no load on the volunteer-run OpenStreetMap services.
+
+```bash
+USE_FIXTURES=1 npm run dev
+```
+
+It works the same against a production build (`npm run build && USE_FIXTURES=1 npm start`).
+
+The fixture world is five clinics chosen to reach the paths that are otherwise
+awkward to trigger on demand: one that should clearly win, one that needs an
+appointment, one reachable only by phone, a specialty listing the relevance
+filter has to drop, and one with no contact channel at all. Type a location
+containing "nowhere" to exercise the location-not-found error state.
+
+**It is deliberately impossible to miss.** The app paints a banner across
+every page, the run's step log says so on its first line, `GET /api/health`
+reports `upstreams: "fixtures"`, and the server logs a warning at startup.
+Nothing about a fixture run is real, and this app's whole premise is that a
+clinic fact is either confirmed or shown as Unknown — so a fixture deployment
+that looked normal would be the worst thing it could do.
+
 ## Deploying
 
 Everything about this app assumes Vercel — the `maxDuration = 60` budgets in
@@ -297,6 +323,11 @@ local dev.
 **Set `AUTH_SECRET` and your provider credentials** if you want accounts —
 see [Signing in](#signing-in). Skip them and the deployment runs
 anonymous-only, which is a supported configuration.
+
+**Never set `USE_FIXTURES`** on a deployment real people can reach. It is not
+blocked in production builds, because testing a production build offline is a
+legitimate thing to want — so it is on you not to ship it. `GET /api/health`
+reporting `upstreams: "fixtures"` is the check.
 
 **Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`** before
 sending it any real traffic. Without them, three things quietly degrade the
