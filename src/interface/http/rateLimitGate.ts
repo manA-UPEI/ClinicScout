@@ -1,14 +1,16 @@
 import { getCurrentUser, isSignInAvailable } from "../../application/auth/getCurrentUser.ts";
 import {
+  globalTierFor,
   signingInWouldRaiseLimit,
   tierFor,
   type RateLimitedRoute,
+  type RateLimitRule,
 } from "../../domain/policies/rateLimitTiers.ts";
 import { createRateLimiter } from "../../infrastructure/ratelimit/createRateLimiter.ts";
 import type { RateLimiter, RateLimitResult } from "../../infrastructure/ratelimit/rateLimiter.ts";
 import { logger } from "../../infrastructure/logging/logger.ts";
 import { clientIp } from "./clientIp.ts";
-import { tooManyRequests } from "./errors.ts";
+import { serviceAtCapacity, tooManyRequests } from "./errors.ts";
 import { resolveSubject, type RateLimitSubject } from "./rateLimitSubject.ts";
 
 export type RateLimitDecision =
@@ -26,16 +28,17 @@ export type RateLimitDecision =
  */
 const limiters = new Map<string, RateLimiter>();
 
-function limiterFor(route: RateLimitedRoute, subject: RateLimitSubject): RateLimiter {
-  const namespace = `${route}:${subject.kind}`;
+function limiterFor(namespace: string, rule: RateLimitRule): RateLimiter {
   const existing = limiters.get(namespace);
   if (existing) return existing;
 
-  const { limit, windowMs } = tierFor(route, subject.kind);
-  const limiter = createRateLimiter(namespace, limit, windowMs);
+  const limiter = createRateLimiter(namespace, rule.limit, rule.windowMs);
   limiters.set(namespace, limiter);
   return limiter;
 }
+
+/** The whole deployment counts against one key; the namespace is what keeps it apart from the per-caller buckets. */
+const GLOBAL_KEY = "all";
 
 /**
  * The standard RateLimit-* family, minus one field.
@@ -74,8 +77,35 @@ function message(route: RateLimitedRoute, subject: RateLimitSubject): string {
   return canHelp ? `${base} Signing in raises this limit.` : base;
 }
 
+const AT_CAPACITY: Record<RateLimitedRoute, string> = {
+  search:
+    "ClinicScout is handling as many searches as it can right now. This isn't " +
+    "you — please try again in a few minutes.",
+  call:
+    "ClinicScout is handling as many calls as it can right now. This isn't " +
+    "you — please try again in a few minutes.",
+};
+
 /**
  * The rate-limit check both SSE routes run before doing any work.
+ *
+ * Two checks, and the order is the whole design.
+ *
+ * The caller's own limit goes first. Reversing it would let one attacker
+ * empty the server-wide bucket: every one of their thousand requests would
+ * consume a global token before their personal limit got a chance to reject
+ * them, and a single caller could deny the service to everyone. Checking
+ * personal first means an abusive caller is stopped at their own ceiling and
+ * never touches the shared budget beyond the allowance they were entitled to.
+ *
+ * That order has a cost, and it is worth naming rather than hiding: a request
+ * rejected for capacity has already spent one of the caller's own tokens. So
+ * during a sustained overload a visitor can burn through their personal
+ * allowance without a single successful search. The alternative — a peek, or
+ * refunding the token — adds a round trip and a race for a fairness problem
+ * that only appears while the service is already degraded, and it is the
+ * strictly better trade against one attacker being able to lock everybody
+ * out.
  *
  * Runs before body parsing, as it did before: a request that will be rejected
  * anyway should not get to spend the server's time being validated first.
@@ -92,24 +122,45 @@ export async function enforceRateLimit(
 ): Promise<RateLimitDecision> {
   const user = await getCurrentUser();
   const subject = resolveSubject(user, clientIp(request));
-  const result = await limiterFor(route, subject).consume(subject.key);
 
-  if (result.allowed) {
-    return { allowed: true, headers: headersFor(result, false), subject };
+  const personal = await limiterFor(
+    `${route}:${subject.kind}`,
+    tierFor(route, subject.kind)
+  ).consume(subject.key);
+
+  if (!personal.allowed) {
+    logger.warn(
+      { requestId, route, subjectKind: subject.kind, limit: personal.limit },
+      "Rate limit exceeded"
+    );
+    return {
+      allowed: false,
+      response: tooManyRequests(
+        message(route, subject),
+        personal.retryAfterMs,
+        requestId,
+        headersFor(personal, true)
+      ),
+    };
   }
 
-  logger.warn(
-    { requestId, route, subjectKind: subject.kind, limit: result.limit },
-    "Rate limit exceeded"
+  const global = await limiterFor(`${route}:global`, globalTierFor(route)).consume(
+    GLOBAL_KEY
   );
 
-  return {
-    allowed: false,
-    response: tooManyRequests(
-      message(route, subject),
-      result.retryAfterMs,
-      requestId,
-      headersFor(result, true)
-    ),
-  };
+  if (!global.allowed) {
+    // Logged at error, not warn: a caller hitting their own limit is the
+    // system working, while the deployment hitting its ceiling is something
+    // an operator should actually see and decide about.
+    logger.error(
+      { requestId, route, limit: global.limit },
+      "Server-wide rate limit exceeded — requests are being shed"
+    );
+    return {
+      allowed: false,
+      response: serviceAtCapacity(AT_CAPACITY[route], global.retryAfterMs, requestId),
+    };
+  }
+
+  return { allowed: true, headers: headersFor(personal, false), subject };
 }

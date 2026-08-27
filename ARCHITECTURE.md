@@ -176,6 +176,7 @@ either SSE route does any work.
 | `user` | Session id (`github:12345`) | 20 / 10 min | 20 / 10 min |
 | `ip` | First `x-forwarded-for` entry | 5 / 10 min | 8 / 10 min |
 | `unidentified` | One shared bucket | 5 / 10 min | 8 / 10 min |
+| *(server-wide)* | One key for the whole deployment | 30 / 10 min | 20 / 10 min |
 
 The anonymous numbers are exactly what both routes enforced before accounts
 existed. Signing in raises a ceiling; it never lowers anyone else's. A
@@ -208,9 +209,62 @@ caller sees a limit approaching rather than only discovering it at the 429.
 the count but not how much of the window is left, and an app that renders an
 unverified clinic fact as "Unknown" should not invent a header either.
 
-Still per-instance unless Redis is configured — see the deploy notes. A
-server-wide limit, which is the one that actually holds when a hundred
-distinct callers are each politely under their own ceiling, is not built yet.
+### The server-wide ceiling
+
+Per-caller limits stop one visitor hammering a route. They do nothing about
+what actually exhausts a free-tier quota: many distinct callers, each politely
+under their own limit, adding up. Two hundred people taking five searches each
+is a thousand searches, every one of them within the rules.
+
+So both routes also count against one key for the whole deployment — 30
+searches and 20 calls per ten minutes. Those numbers are derived, not chosen:
+a search spends up to ~6 Gemini calls and a free-tier key allows on the order
+of 15 requests a minute, so roughly 2.5 searches a minute is what the quota
+sustains. `globalTierFor` in the tier policy carries the arithmetic, because
+it is the one number here that is a property of your API key rather than of
+the app.
+
+**The order of the two checks is the design.** Personal limit first. Reversing
+it would let one attacker empty the shared bucket: each of their thousand
+requests would consume a global token before their personal limit rejected
+them, and a single caller could deny the service to everyone.
+
+That order has a cost worth naming rather than hiding: a request rejected for
+capacity has already spent one of the caller's own tokens, so during a
+sustained overload a visitor can burn their whole allowance without a single
+successful search. A peek, or refunding the token, would fix it — at the price
+of a round trip and a race, for a fairness problem that only appears while the
+service is already degraded. Letting one attacker lock everybody out is the
+worse failure.
+
+**A capacity rejection is a 503, not another 429.** "You have sent too many
+requests" would be a lie told to someone on their first search of the day, and
+it would train them to slow down when slowing down is not the fix. The error
+kind is `at_capacity` rather than `rate_limited`, so the UI says the service
+is busy instead of blaming the visitor. It carries a `Retry-After` and no
+`RateLimit-*` headers: those describe the caller's own allowance, which is
+untouched and still has room.
+
+Log levels differ on purpose. A caller hitting their own limit is the system
+working, and logs at warn. The deployment hitting its ceiling is something an
+operator should see and decide about, and logs at error.
+
+**Redis counters are atomic.** `RedisRateLimiter` runs INCR, the conditional
+EXPIRE, and the TTL read as one Lua script. As three round trips there was a
+real gap: a process dying between INCR and EXPIRE left a key with no TTL that
+never reset — a bucket stuck at its limit forever. That was an acceptable risk
+for a per-caller bucket, a few milliseconds wide and self-healing on the next
+deploy. A server-wide counter is hit by every request on the deployment at
+once, so both the odds and the blast radius change: one unlucky moment would
+wedge the whole service until someone deleted the key by hand.
+
+**All of it is still per-instance without Redis.** With `sharedStateBackend`
+on `"memory"`, every tier including the global one counts separately per
+instance, so the real ceiling is multiplied by however many are warm. That
+matters more for the global limit than for the personal ones: a per-caller
+limit that is 3x too loose still bounds one caller, while a global limit that
+is 3x too loose does not bound the quota it exists to protect. On a single
+`next start` process it is exact.
 
 ## Fixture mode
 

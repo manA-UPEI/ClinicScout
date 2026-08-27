@@ -66,8 +66,41 @@ const TIERS: Record<RateLimitedRoute, Record<SubjectKind, RateLimitRule>> = {
   },
 };
 
+/**
+ * The ceiling for the whole deployment, regardless of who is asking.
+ *
+ * The per-caller tiers above stop one visitor hammering a route. They do
+ * nothing about the case that actually exhausts a free-tier quota: many
+ * distinct callers, each politely under their own limit, adding up. Two
+ * hundred people taking five searches each is a thousand searches, and every
+ * one of them is within the rules.
+ *
+ * The numbers come from the binding upstream constraint, not from taste. A
+ * search spends up to ~6 Gemini calls; a free-tier key allows on the order of
+ * 15 requests per minute, so roughly 2.5 searches a minute is what the quota
+ * actually sustains — about 25 in a ten-minute window. 30 leaves a little
+ * headroom, since not every run uses its full turn budget. Calls spend one
+ * extraction each and are bounded more by holding a 60s function open than by
+ * quota.
+ *
+ * If you are on paid quota, this is the arithmetic to redo — it is the one
+ * number here that is a property of your API key rather than of the app.
+ *
+ * Nominatim and Overpass are not the constraint at this scale: 30 searches
+ * per ten minutes is 0.05 requests a second against Nominatim's stated
+ * ceiling of one.
+ */
+const GLOBAL_TIERS: Record<RateLimitedRoute, RateLimitRule> = {
+  search: { limit: 30, windowMs: TEN_MINUTES_MS },
+  call: { limit: 20, windowMs: TEN_MINUTES_MS },
+};
+
 export function tierFor(route: RateLimitedRoute, kind: SubjectKind): RateLimitRule {
   return TIERS[route][kind];
+}
+
+export function globalTierFor(route: RateLimitedRoute): RateLimitRule {
+  return GLOBAL_TIERS[route];
 }
 
 /** Whether signing in would actually buy this caller a higher ceiling — the only case where saying so in a 429 is useful rather than noise. */

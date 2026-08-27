@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  globalTierFor,
   signingInWouldRaiseLimit,
   tierFor,
   type RateLimitedRoute,
@@ -56,4 +57,22 @@ test("offers sign-in as a fix only to callers it would actually help", () => {
   assert.equal(signingInWouldRaiseLimit("search", "ip"), true);
   assert.equal(signingInWouldRaiseLimit("search", "unidentified"), true);
   assert.equal(signingInWouldRaiseLimit("search", "user"), false);
+});
+
+test("the server-wide ceiling is at least the most generous personal one", () => {
+  for (const route of ROUTES) {
+    const mostGenerous = Math.max(...KINDS.map((k) => tierFor(route, k).limit));
+    assert.ok(
+      globalTierFor(route).limit >= mostGenerous,
+      `${route}: a global ceiling below the personal one would make the ` +
+        `personal limit unreachable, and every rejection would blame the ` +
+        `server for what is really one caller's usage`
+    );
+  }
+});
+
+test("the server-wide window matches the personal ones", () => {
+  for (const route of ROUTES) {
+    assert.equal(globalTierFor(route).windowMs, tierFor(route, "user").windowMs);
+  }
 });

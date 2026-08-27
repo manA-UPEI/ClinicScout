@@ -26,3 +26,31 @@ export function tooManyRequests(
     }
   );
 }
+
+/**
+ * The deployment as a whole is at its ceiling, not this caller.
+ *
+ * 503 rather than another 429 on purpose. 429 means "you have sent too many
+ * requests", which would be a lie told to someone on their first search of
+ * the day, and it would train them to slow down when slowing down is not the
+ * fix. 503 with Retry-After says the honest thing: the service is
+ * temporarily unable, try again shortly.
+ *
+ * No RateLimit-* headers here. Those describe the caller's own allowance,
+ * which is untouched and still has room — attaching capacity numbers to them
+ * would mean two different limits sharing one header family, and would
+ * publish exactly how close the deployment is to its ceiling.
+ */
+export function serviceAtCapacity(
+  message: string,
+  retryAfterMs: number,
+  requestId?: string
+): Response {
+  return Response.json(
+    { error: { kind: "at_capacity", message, requestId } },
+    {
+      status: 503,
+      headers: { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) },
+    }
+  );
+}

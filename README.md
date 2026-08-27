@@ -274,7 +274,10 @@ Rotating `AUTH_SECRET` invalidates every session at once, which is the
 intended emergency lever.
 
 Signing in raises your rate limits: 20 searches and 20 calls per ten minutes,
-against 5 and 8 for anonymous visitors. Anonymous callers get exactly what
+against 5 and 8 for anonymous visitors. Both sit under a server-wide ceiling
+of 30 searches and 20 calls per ten minutes, so a busy moment can answer with
+"the service is busy" (HTTP 503) even when your own allowance has room —
+that one is not about you. Anonymous callers get exactly what
 they got before accounts existed — signing in raises a ceiling rather than
 lowering anyone else's. The tiers live in
 `src/domain/policies/rateLimitTiers.ts` if you want to change them.
@@ -344,9 +347,12 @@ they look like they should:
 
 - the search-results and website-inspection caches stop being shared across
   instances, so more requests than necessary hit Overpass and Gemini for real
-- the rate limiter on `/api/search` and `/api/call` lets through more than its
-  stated limit, since each instance counts independently — this applies to
-  every tier, signed-in included
+- the rate limiters on `/api/search` and `/api/call` let through more than
+  their stated limits, since each instance counts independently. This applies
+  to every tier — and it matters most for the server-wide ceiling, because a
+  per-caller limit that is 3x too loose still bounds one caller, while a
+  global limit that is 3x too loose does not bound the API quota it exists to
+  protect
 - the one-call-per-clinic rail on agent-placed calls can be bypassed
 
 A free [Upstash](https://upstash.com) Redis database is enough to fix all
