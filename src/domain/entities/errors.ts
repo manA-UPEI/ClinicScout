@@ -3,6 +3,8 @@ export type AgentErrorKind =
   | "network"
   | "no_results"
   | "rate_limited"
+  /** The whole deployment is at its ceiling — nothing the caller did wrong, and nothing they can fix by slowing down. */
+  | "at_capacity"
   | "invalid_input";
 
 export class AgentError extends Error {

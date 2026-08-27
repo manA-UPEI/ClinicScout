@@ -33,20 +33,34 @@ export class FixedWindowRateLimiter implements RateLimiter {
     this.now = now;
   }
 
+  private allow(remaining: number): RateLimitResult {
+    return {
+      allowed: true,
+      retryAfterMs: 0,
+      remaining: Math.max(0, remaining),
+      limit: this.limit,
+    };
+  }
+
   async consume(key: string): Promise<RateLimitResult> {
     const t = this.now();
     const entry = this.hits.get(key);
 
     if (!entry || t - entry.windowStart >= this.windowMs) {
       this.hits.set(key, { count: 1, windowStart: t });
-      return { allowed: true, retryAfterMs: 0 };
+      return this.allow(this.limit - 1);
     }
 
     if (entry.count >= this.limit) {
-      return { allowed: false, retryAfterMs: entry.windowStart + this.windowMs - t };
+      return {
+        allowed: false,
+        retryAfterMs: entry.windowStart + this.windowMs - t,
+        remaining: 0,
+        limit: this.limit,
+      };
     }
 
     entry.count += 1;
-    return { allowed: true, retryAfterMs: 0 };
+    return this.allow(this.limit - entry.count);
   }
 }

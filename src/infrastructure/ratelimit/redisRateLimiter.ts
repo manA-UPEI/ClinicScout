@@ -2,24 +2,38 @@ import type { RateLimiter, RateLimitResult } from "./rateLimiter.ts";
 import type { RedisTransport } from "../cache/redisRestClient.ts";
 
 /**
- * A RateLimiter backed by a single Redis counter per key, shared across
- * every serverless instance — the piece FixedWindowRateLimiter alone can't
- * offer, since each instance would otherwise keep its own count and the
- * real limit ends up higher than intended the moment there's more than one
- * warm instance.
+ * Increment, set the expiry only on the first hit of a window, and report
+ * both the new count and the time left — in one atomic step.
  *
- * Fixed-window via INCR+EXPIRE: INCR is atomic and creates the key at 1 if
- * it didn't exist, so concurrent callers can't race past each other the way
- * a separate GET-then-SET would. EXPIRE is only set on the first increment
- * of a window (count === 1) — setting it every time would keep pushing the
- * window out and the limit would never actually reset.
+ * Each line earns its place. INCR creates the key at 1 if it is missing, so
+ * concurrent callers cannot race past each other the way a separate
+ * GET-then-SET would. EXPIRE is guarded on `count == 1` because setting it
+ * every time would keep pushing the window out and the limit would never
+ * reset. TTL is read here rather than in a follow-up command so the caller
+ * gets a retry time measured at the same instant as the count.
  *
- * The one gap this doesn't close: if the process died between INCR and
- * EXPIRE, the key would persist with no TTL and never reset. Not fixed here
- * — a Lua script would make the two atomic, but that's more machinery than
- * a rate limiter protecting free-tier API quota needs; the window this gap
- * requires is a few milliseconds wide and self-heals the next time that key
- * is deleted or the app is redeployed.
+ * This used to be three separate round trips, which left a real gap: a
+ * process that died between INCR and EXPIRE would leave a key with no TTL
+ * that never reset — a bucket permanently stuck at its limit. The gap was a
+ * few milliseconds wide and was an acceptable risk for a per-caller limit,
+ * but a server-wide counter is hit by every request on the deployment at
+ * once, so both the odds and the blast radius change: one unlucky moment
+ * would wedge the whole service until someone deleted the key by hand.
+ * Redis runs a script atomically, which closes it.
+ */
+const CONSUME_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return {count, redis.call('TTL', KEYS[1])}
+`;
+
+/**
+ * A RateLimiter backed by a single Redis counter per key, shared across every
+ * serverless instance — the piece FixedWindowRateLimiter cannot offer, since
+ * each instance would otherwise keep its own count and the real limit ends up
+ * multiplied by however many instances happen to be warm.
  */
 export class RedisRateLimiter implements RateLimiter {
   private readonly transport: RedisTransport;
@@ -44,19 +58,46 @@ export class RedisRateLimiter implements RateLimiter {
 
   async consume(key: string): Promise<RateLimitResult> {
     const fullKey = `ratelimit:${this.namespace}:${key}`;
-    const count = await this.transport.incr(fullKey);
-
-    if (count === 1) {
-      await this.transport.expire(fullKey, this.windowSeconds);
-    }
+    const [count, ttl] = parseScriptResult(await this.transport.eval(
+      CONSUME_SCRIPT,
+      [fullKey],
+      [this.windowSeconds]
+    ));
 
     if (count <= this.limit) {
-      return { allowed: true, retryAfterMs: 0 };
+      return {
+        allowed: true,
+        retryAfterMs: 0,
+        remaining: Math.max(0, this.limit - count),
+        limit: this.limit,
+      };
     }
 
-    const ttl = await this.transport.ttl(fullKey);
-    // A missing/expired TTL here (null) would mean the EXPIRE above never
-    // landed — fall back to the full window rather than claiming no wait.
-    return { allowed: false, retryAfterMs: (ttl ?? this.windowSeconds) * 1000 };
+    // Redis reports -1 for a key with no expiry and -2 for one that is gone;
+    // neither is a remaining time. Falling back to the full window overstates
+    // the wait slightly, which is the safe direction — the alternative is
+    // telling a caller to retry immediately into another rejection.
+    const secondsLeft = ttl >= 0 ? ttl : this.windowSeconds;
+
+    return {
+      allowed: false,
+      retryAfterMs: secondsLeft * 1000,
+      remaining: 0,
+      limit: this.limit,
+    };
   }
+}
+
+/**
+ * Lua's return values arrive as an array of numbers, but the REST transport
+ * types its result as `unknown` and Upstash has been known to render integers
+ * as strings. Coercing here keeps that quirk in one place instead of letting
+ * a string leak into the arithmetic above and turn a comparison into a
+ * silently wrong answer.
+ */
+function parseScriptResult(result: unknown): [count: number, ttl: number] {
+  if (!Array.isArray(result) || result.length < 2) {
+    throw new Error("Rate limiter script returned an unexpected shape");
+  }
+  return [Number(result[0]), Number(result[1])];
 }

@@ -8,7 +8,8 @@ export interface RedisRestConfig {
  * need. GET/SET cover the cache; SETNX and DEL are what let the call-session
  * store claim a clinic atomically and release the claim when a call ends;
  * INCR/EXPIRE/TTL are what let the rate limiter keep one shared count across
- * every serverless instance instead of one count per instance.
+ * every serverless instance instead of one count per instance, and EVAL is
+ * what lets it do so atomically.
  */
 export interface RedisTransport {
   get(key: string): Promise<string | null>;
@@ -21,6 +22,13 @@ export interface RedisTransport {
   expire(key: string, exSeconds: number): Promise<void>;
   /** Seconds remaining before the key expires, or null if it has no TTL or doesn't exist. */
   ttl(key: string): Promise<number | null>;
+  /**
+   * Runs a Lua script server-side. Redis executes a script atomically, so
+   * this is what lets a read-modify-write sequence — the rate limiter's
+   * INCR-then-EXPIRE — happen with nothing interleaved between the steps,
+   * and in one round trip rather than three.
+   */
+  eval(script: string, keys: string[], args: (string | number)[]): Promise<unknown>;
 }
 
 const TIMEOUT_MS = 5000;
@@ -89,6 +97,12 @@ export function createRedisRestTransport(config: RedisRestConfig): RedisTranspor
       // Redis returns -2 for "no such key" and -1 for "no expiry set" —
       // neither is a meaningful remaining time.
       return seconds >= 0 ? seconds : null;
+    },
+    async eval(script, keys, args) {
+      // EVAL's wire form is the script, then how many of the trailing
+      // arguments are keys, then keys followed by plain args. Redis needs the
+      // count to tell the two apart; it cannot infer the split.
+      return runCommand(config, ["EVAL", script, keys.length, ...keys, ...args]);
     },
   };
 }

@@ -1,9 +1,9 @@
-import { search_clinics } from "../../infrastructure/geo/overpassClinicDirectory.ts";
+import { search_clinics } from "../../infrastructure/geo/createClinicDirectory.ts";
 import { rank_clinics } from "../../domain/policies/rankClinics.ts";
 import { partitionBySpecialty } from "../../domain/policies/excludeSpecialtyListings.ts";
-import { geocode } from "../../infrastructure/geo/nominatimGeocoder.ts";
+import { geocode } from "../../infrastructure/geo/createGeocoder.ts";
 import { inspect_clinic, mergeInspection } from "./inspectClinicUseCase.ts";
-import { geminiConfigured } from "../../infrastructure/llm/geminiJsonClient.ts";
+import { geminiConfigured } from "../../infrastructure/llm/createJsonExtractionModel.ts";
 import { AgentError } from "../../domain/entities/errors.ts";
 import type { AgentRunResult, AgentStep, InputFormData, Urgency } from "../../domain/entities/agentRun.ts";
 import type { Clinic, ExcludedSpecialty, GeocodedLocation, RankedClinic } from "../../domain/entities/clinic.ts";

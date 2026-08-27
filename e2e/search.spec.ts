@@ -112,3 +112,63 @@ test("the rate-limited path shows its own heading, not a generic error", async (
   await expect(page.getByRole("heading", { name: "Too many searches" })).toBeVisible();
   await expect(page.getByText("Reference: e2e67890")).toBeVisible();
 });
+
+// A capacity rejection is not the visitor's fault, and the UI has to say so —
+// otherwise someone on their first search of the day is told to slow down.
+test("a server-at-capacity rejection blames the service, not the visitor", async ({
+  page,
+}) => {
+  await page.route("**/api/search", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      headers: { "Retry-After": "584" },
+      body: JSON.stringify({
+        error: {
+          kind: "at_capacity",
+          message:
+            "ClinicScout is handling as many searches as it can right now. This isn't you — please try again in a few minutes.",
+          requestId: "e2ecap01",
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByPlaceholder("e.g. Charlottetown, PEI").fill("Toronto, Ontario");
+  await page.getByRole("button", { name: "Find a clinic" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "The service is busy right now" })
+  ).toBeVisible();
+  await expect(page.getByText("This isn't you")).toBeVisible();
+  await expect(page.getByText("Reference: e2ecap01")).toBeVisible();
+});
+
+// An older client meeting a newer server: page.tsx casts `kind` straight off
+// the wire, so an unrecognised one must still render a usable error rather
+// than a blank heading over a perfectly readable message.
+test("an unrecognised error kind still renders a heading", async ({ page }) => {
+  await page.route("**/api/search", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: {
+          kind: "some_kind_this_client_has_never_heard_of",
+          message: "Something unusual happened.",
+          requestId: "e2eunk01",
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.getByPlaceholder("e.g. Charlottetown, PEI").fill("Toronto, Ontario");
+  await page.getByRole("button", { name: "Find a clinic" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Something went wrong" })
+  ).toBeVisible();
+  await expect(page.getByText("Something unusual happened.")).toBeVisible();
+});

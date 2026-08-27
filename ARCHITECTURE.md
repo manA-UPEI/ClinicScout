@@ -106,6 +106,199 @@ widened re-search with their inspection results intact), excluded specialty
 listings, the radius actually searched, which clinics have been inspected, and
 the finalization once accepted.
 
+## Accounts
+
+Optional, and free to run: Auth.js (next-auth v5) with OAuth providers and no
+database. The session is a signed, encrypted cookie and nothing else — there
+is no user table, no session table, and nothing about a visitor stored
+server-side.
+
+**Anonymous is a supported tier, not a broken state.** A deployment with no
+`AUTH_SECRET` and no provider credentials behaves exactly as the app did
+before accounts existed, down to the sign-in link not rendering at all. Which
+state a deployment is in is visible at `GET /api/health` (`authConfigured`,
+`authProviders`), because the UI degrades silently by design and a monitor
+should not have to infer it.
+
+**The subject is `provider:providerAccountId`** — `github:12345` — built in
+[infrastructure/auth/sessionUser.ts](src/infrastructure/auth/sessionUser.ts).
+Namespaced because there is no database and therefore no account linking: the
+same person signing in with GitHub and with Google is two subjects. As the
+rate-limit key that Phase 2 builds on, this means one person can hold two
+buckets — 2x quota, not unlimited. Keying on email instead would collapse the
+two, at the cost of letting a provider that returns an address it never
+verified sit in someone else's bucket. The account id is the field a provider
+guarantees is stable and the user cannot choose, so it wins; linking properly
+is work for whenever a user table exists.
+
+A session with no usable id maps to `null` rather than to a signed-in user
+with a blank key, for the same reason: every such caller would otherwise share
+one bucket, which is the bug `clientIp()`'s `"unknown"` fallback already has
+on the anonymous path.
+
+**No client-side auth SDK, deliberately.** OAuth here is redirects plus a
+server-to-server token exchange, so it adds no `script-src` and no
+`connect-src` origin to the CSP in `next.config.ts` — only the two authorize
+endpoints under `form-action`, and only because the CSP3 spec and browsers
+disagree about whether `form-action` re-checks a redirect. A hosted auth
+widget would have cost both directives. Sign-in and sign-out use Auth.js's
+own built-in pages, so this phase ships no client JS, no `SessionProvider`,
+and no server actions for auth.
+
+**One deliberate layering exception.**
+[application/auth/getCurrentUser.ts](src/application/auth/getCurrentUser.ts)
+wires its own adapter rather than receiving one, the same shape
+`runClinicSearchUseCase.ts` already uses for the Gemini client. Server
+components have no composition root to be injected from, and the ESLint
+boundary rule correctly forbids `components/`/`app/` importing an
+infrastructure adapter directly — so the use-case entry point is where the
+wiring has to live.
+
+**A build-time footgun worth knowing.** Whether `/` renders statically or
+dynamically is decided at build time: with no providers configured,
+`isSignInAvailable()` short-circuits before anything reads cookies and the
+page stays static. Configure auth only at runtime and the page is already
+baked static, so the sign-in link never appears even though `/api/health`
+reports `authConfigured: true`. On Vercel the variables are present at build
+too, so this resolves itself; anywhere that separates build and runtime
+environments, set them for both.
+
+## Rate limiting
+
+Three tiers, keyed by how well the caller is identified, defined in
+[domain/policies/rateLimitTiers.ts](src/domain/policies/rateLimitTiers.ts) and
+enforced by
+[interface/http/rateLimitGate.ts](src/interface/http/rateLimitGate.ts) before
+either SSE route does any work.
+
+| Tier | Key | `/api/search` | `/api/call` |
+|---|---|---|---|
+| `user` | Session id (`github:12345`) | 20 / 10 min | 20 / 10 min |
+| `ip` | First `x-forwarded-for` entry | 5 / 10 min | 8 / 10 min |
+| `unidentified` | One shared bucket | 5 / 10 min | 8 / 10 min |
+| *(server-wide)* | One key for the whole deployment | 30 / 10 min | 20 / 10 min |
+
+The anonymous numbers are exactly what both routes enforced before accounts
+existed. Signing in raises a ceiling; it never lowers anyone else's. A
+test asserts this, because "we added accounts and your quota dropped" is a
+regression that would be easy to introduce and hard to notice.
+
+**Why a session id is worth more than an address.** Not because the work is
+cheaper, but because the key is better: it survives the caller changing
+networks, and it cannot be forged by setting a header. `clientIp()` says so
+about itself — a forwarded address is spoofable by anyone talking to the
+deployment directly rather than through its proxy, so the `ip` tier slows
+accidental hammering rather than a determined attacker. Verified: the same
+session counts against one bucket across three different forwarded
+addresses.
+
+**Why every unidentifiable caller shares one bucket.** The tempting
+alternative is a fresh key per request, which reads like fairness and is
+actually the absence of a limit — anyone could opt out by dropping a header.
+Sharing fails closed. On a correctly proxied deployment this tier should be
+nearly empty; if it is not, the proxy is not forwarding addresses.
+
+**One limiter per route *and* tier.** The limit is baked into the limiter, so
+the namespace carries both (`search:user`, `search:ip`). Without the tier in
+the key, a user id that happened to look like an address would share its
+bucket.
+
+`RateLimit-Limit` and `RateLimit-Remaining` are returned on every call, so a
+caller sees a limit approaching rather than only discovering it at the 429.
+`RateLimit-Reset` appears only on a rejection: the fixed-window limiters know
+the count but not how much of the window is left, and an app that renders an
+unverified clinic fact as "Unknown" should not invent a header either.
+
+### The server-wide ceiling
+
+Per-caller limits stop one visitor hammering a route. They do nothing about
+what actually exhausts a free-tier quota: many distinct callers, each politely
+under their own limit, adding up. Two hundred people taking five searches each
+is a thousand searches, every one of them within the rules.
+
+So both routes also count against one key for the whole deployment — 30
+searches and 20 calls per ten minutes. Those numbers are derived, not chosen:
+a search spends up to ~6 Gemini calls and a free-tier key allows on the order
+of 15 requests a minute, so roughly 2.5 searches a minute is what the quota
+sustains. `globalTierFor` in the tier policy carries the arithmetic, because
+it is the one number here that is a property of your API key rather than of
+the app.
+
+**The order of the two checks is the design.** Personal limit first. Reversing
+it would let one attacker empty the shared bucket: each of their thousand
+requests would consume a global token before their personal limit rejected
+them, and a single caller could deny the service to everyone.
+
+That order has a cost worth naming rather than hiding: a request rejected for
+capacity has already spent one of the caller's own tokens, so during a
+sustained overload a visitor can burn their whole allowance without a single
+successful search. A peek, or refunding the token, would fix it — at the price
+of a round trip and a race, for a fairness problem that only appears while the
+service is already degraded. Letting one attacker lock everybody out is the
+worse failure.
+
+**A capacity rejection is a 503, not another 429.** "You have sent too many
+requests" would be a lie told to someone on their first search of the day, and
+it would train them to slow down when slowing down is not the fix. The error
+kind is `at_capacity` rather than `rate_limited`, so the UI says the service
+is busy instead of blaming the visitor. It carries a `Retry-After` and no
+`RateLimit-*` headers: those describe the caller's own allowance, which is
+untouched and still has room.
+
+Log levels differ on purpose. A caller hitting their own limit is the system
+working, and logs at warn. The deployment hitting its ceiling is something an
+operator should see and decide about, and logs at error.
+
+**Redis counters are atomic.** `RedisRateLimiter` runs INCR, the conditional
+EXPIRE, and the TTL read as one Lua script. As three round trips there was a
+real gap: a process dying between INCR and EXPIRE left a key with no TTL that
+never reset — a bucket stuck at its limit forever. That was an acceptable risk
+for a per-caller bucket, a few milliseconds wide and self-healing on the next
+deploy. A server-wide counter is hit by every request on the deployment at
+once, so both the odds and the blast radius change: one unlucky moment would
+wedge the whole service until someone deleted the key by hand.
+
+**All of it is still per-instance without Redis.** With `sharedStateBackend`
+on `"memory"`, every tier including the global one counts separately per
+instance, so the real ceiling is multiplied by however many are warm. That
+matters more for the global limit than for the personal ones: a per-caller
+limit that is 3x too loose still bounds one caller, while a global limit that
+is 3x too loose does not bound the quota it exists to protect. On a single
+`next start` process it is exact.
+
+## Fixture mode
+
+`USE_FIXTURES=1` replaces all five upstreams — geocoder, clinic directory,
+website fetcher, and both Gemini clients — with canned stand-ins, so the whole
+app including the agent loop runs with no API quota spent and no load on
+Nominatim or Overpass. Selection happens in a `createX.ts` per port, the same
+shape [createCache.ts](src/infrastructure/cache/createCache.ts) already used.
+
+It covers all five together on purpose: a half-faked run still burns quota,
+which defeats the point.
+
+**The scripted agent is not a recording.** The fixture `ModelCallable` re-reads
+the transcript it is handed each turn and picks its next tool from what has
+already answered, taking clinic ids, ranking order and confirmed fields out of
+the *real* tool responses. So a fixture run exercises the genuine tools, run
+state, quote-verification firewall and citation guard — it just supplies the
+model's side of the conversation. It also cannot drift out of sync with a loop
+that retries a turn or fans several calls into one.
+
+**The canned extractions go through the same firewall as a real model's.**
+A quote that drifted out of agreement with its fixture page would have its
+field discarded and render as Unknown — the fixture would fail exactly the way
+a hallucinating model fails. A test asserts every canned quote still verifies,
+so that drift shows up as a red test rather than as an app that looks broken.
+
+**It is loud rather than locked.** Testing a production build offline is a
+real need, so the mode is not blocked in production builds — which makes
+accidental enablement the risk to manage instead. For an app that tells people
+where to seek medical care, serving invented clinics unnoticed is a genuinely
+bad outcome, so fixture mode announces itself four ways: an undismissable
+banner on every page, the first line of the run's own step log, `upstreams:
+"fixtures"` at `GET /api/health`, and a warning logged once per process.
+
 ## The fact firewall
 
 Two places ask the same question — is there anything behind this claim? — and
@@ -301,7 +494,9 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [components/ActionPanel.tsx](src/components/ActionPanel.tsx) | Renders whichever next action `determineAction` selected |
 | [components/EmailDraftModal.tsx](src/components/EmailDraftModal.tsx) | Editable draft, explicitly mocked — nothing is ever sent |
 | [components/EmergencyBanner.tsx](src/components/EmergencyBanner.tsx) | Sits above results when the request is emergency-adjacent |
-| [components/Footer.tsx](src/components/Footer.tsx) | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished; the emergency-services and search-location-privacy disclaimer |
+| [components/FixtureBanner.tsx](src/components/FixtureBanner.tsx) | Unmissable warning across every page when `USE_FIXTURES` is on and nothing rendered is real |
+| [components/AuthStatus.tsx](src/components/AuthStatus.tsx) | Rendered in `app/layout.tsx` — who you are and the one link that changes it; renders nothing at all when no OAuth provider is configured |
+| [components/Footer.tsx](src/components/Footer.tsx) | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished; the emergency-services, search-location-privacy and account-data disclaimer |
 | [components/ErrorState.tsx](src/components/ErrorState.tsx) | Renders an `AgentError` by kind, with a retry |
 | [components/hooks/useStreamedSse.ts](src/components/hooks/useStreamedSse.ts) | Owns one POST-and-stream-SSE request's `AbortController`; used by both the search flow and `CallPanel` |
 | [shared/sse/postAndStream.ts](src/shared/sse/postAndStream.ts) | The framework-agnostic fetch + content-type check + SSE read loop the hook wraps |
@@ -313,11 +508,14 @@ is never a reason to prefer a clinic; it is the absence of one.
 | Module | Role |
 |---|---|
 | [app/api/search/route.ts](src/app/api/search/route.ts) | Thin controller: parse → validate shape → `runClinicSearch` → SSE-frame events |
-| [app/api/health/route.ts](src/app/api/health/route.ts) | Reports configuration (Gemini configured, shared-state backend) for an external uptime check — not a live ping of every upstream |
+| [app/api/health/route.ts](src/app/api/health/route.ts) | Reports configuration (Gemini configured, shared-state backend, whether sign-in is possible and with which providers) for an external uptime check — not a live ping of every upstream |
+| [app/api/auth/[...nextauth]/route.ts](src/app/api/auth/%5B...nextauth%5D/route.ts) | Auth.js's own sign-in, callback, sign-out, session and CSRF endpoints; the app writes no auth UI of its own |
 | [interface/http/sseResponse.ts](src/interface/http/sseResponse.ts) | Shared `ReadableStream`/encoder/abort-listener/close boilerplate for both SSE routes |
 | [interface/http/errors.ts](src/interface/http/errors.ts) | Shared JSON error responder |
 | [interface/http/requestId.ts](src/interface/http/requestId.ts) | One id per request, carried in every error payload and its matching `console.error` line — the thing that makes a user-reported failure findable in logs |
-| [interface/http/clientIp.ts](src/interface/http/clientIp.ts) | Best-effort caller identity from `x-forwarded-for`, used to key the rate limiter |
+| [interface/http/clientIp.ts](src/interface/http/clientIp.ts) | Best-effort caller address from `x-forwarded-for`; returns `null` rather than a placeholder when there is none |
+| [interface/http/rateLimitSubject.ts](src/interface/http/rateLimitSubject.ts) | Which bucket a request counts against — session id, forwarded address, or the shared unidentified bucket |
+| [interface/http/rateLimitGate.ts](src/interface/http/rateLimitGate.ts) | The check both SSE routes run before any work: resolve the subject, consume its tier's limiter, answer 429 or hand back `RateLimit-*` headers |
 
 ### Application — search orchestration
 
@@ -336,12 +534,13 @@ is never a reason to prefer a clinic; it is the absence of one.
 
 | Module | Role |
 |---|---|
-| [application/ports/*.ts](src/application/ports/) | `Geocoder`, `ClinicDirectory`, `WebsiteFetcher`, `JsonExtractionModel`, `FunctionCallingModel`, `CallProvider`, `CallSessionStore`, `ConfigProvider`, `Clock` — the seams infrastructure adapters implement |
+| [application/ports/*.ts](src/application/ports/) | `Geocoder`, `ClinicDirectory`, `WebsiteFetcher`, `JsonExtractionModel`, `FunctionCallingModel`, `CallProvider`, `CallSessionStore`, `ConfigProvider`, `SessionReader`, `Clock` — the seams infrastructure adapters implement |
 
 ### Domain — entities, policies, verification
 
 | Module | Role |
 |---|---|
+| [domain/policies/rateLimitTiers.ts](src/domain/policies/rateLimitTiers.ts) | What each class of caller gets per route, and whether signing in would raise it — pure, no HTTP |
 | [domain/entities/clinic.ts](src/domain/entities/clinic.ts) | `Clinic`, `RankedClinic`, `ClinicInspection`, `Evidence`, `clinicShortId` |
 | [domain/entities/agentRun.ts](src/domain/entities/agentRun.ts) | `AgentStep`, `AgentReasoning`, `AgentRunResult`, `ActionCase`, `InputFormData` |
 | [domain/entities/errors.ts](src/domain/entities/errors.ts) | `AgentError` |
@@ -375,7 +574,14 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [infrastructure/ratelimit/rateLimiter.ts](src/infrastructure/ratelimit/rateLimiter.ts) | `RateLimiter` — the shape both limiters below implement |
 | [infrastructure/ratelimit/fixedWindowRateLimiter.ts](src/infrastructure/ratelimit/fixedWindowRateLimiter.ts) | In-memory `RateLimiter`; single-process only — the same caveat as `TtlCache` |
 | [infrastructure/ratelimit/redisRateLimiter.ts](src/infrastructure/ratelimit/redisRateLimiter.ts) | Redis-backed `RateLimiter` — one INCR+EXPIRE counter shared across every serverless instance, which the in-memory version can't offer |
-| [infrastructure/ratelimit/createRateLimiter.ts](src/infrastructure/ratelimit/createRateLimiter.ts) | Picks Redis when configured, else the in-memory limiter — used by both `/api/search` and `/api/call` |
+| [infrastructure/ratelimit/createRateLimiter.ts](src/infrastructure/ratelimit/createRateLimiter.ts) | Picks Redis when configured, else the in-memory limiter — one instance per route *and* tier, built by `rateLimitGate.ts` |
+| [infrastructure/auth/nextAuth.ts](src/infrastructure/auth/nextAuth.ts) | The only module that imports `next-auth`; registers whichever OAuth providers have credentials and stamps the provider-namespaced subject onto the token |
+| [infrastructure/auth/sessionUser.ts](src/infrastructure/auth/sessionUser.ts) | Pure session→`AuthenticatedUser` mapping and the subject format; structurally typed so it — and its tests — never load `next-auth` |
+| [infrastructure/auth/authJsSessionReader.ts](src/infrastructure/auth/authJsSessionReader.ts) | Implements `SessionReader` over `auth()`; an unverifiable cookie lands on the anonymous path rather than raising |
+| [infrastructure/config/authProviders.ts](src/infrastructure/config/authProviders.ts) | The one place `AUTH_SECRET` and the `AUTH_<PROVIDER>_ID`/`_SECRET` pairs are read; used by `nextAuth.ts` and `/api/health` |
+| [infrastructure/config/fixtureMode.ts](src/infrastructure/config/fixtureMode.ts) | The one place `USE_FIXTURES` is read; warns once per process when it is on |
+| [infrastructure/fixtures/*.ts](src/infrastructure/fixtures/) | Canned stand-ins for all five upstreams — geocoder, clinic directory, website fetcher, and both Gemini clients |
+| [infrastructure/geo/createGeocoder.ts](src/infrastructure/geo/createGeocoder.ts), [createClinicDirectory.ts](src/infrastructure/geo/createClinicDirectory.ts), [web/createWebsiteFetcher.ts](src/infrastructure/web/createWebsiteFetcher.ts), [llm/createJsonExtractionModel.ts](src/infrastructure/llm/createJsonExtractionModel.ts), [llm/createFunctionCallingModel.ts](src/infrastructure/llm/createFunctionCallingModel.ts) | Fixture-or-live selection, one per port — the same shape as `createCache.ts` |
 | [infrastructure/logging/logger.ts](src/infrastructure/logging/logger.ts) | Shared pino logger — JSON in production, pretty-printed in dev; every prior `console.error` now logs structured fields (e.g. the request id) instead of interpolating them into a string |
 | [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts) | Call subsystem provider adapter (see Agent-placed calls, above) |
 
