@@ -30,6 +30,9 @@ function fakeTransport(): RedisTransport & { store: Map<string, string> } {
     async ttl() {
       return null;
     },
+    async eval() {
+      return null;
+    },
   };
 }
 
@@ -95,6 +98,9 @@ test("get() fails open to undefined when the transport throws", async () => {
       throw new Error("network down");
     },
     ttl: async () => {
+      throw new Error("network down");
+    },
+    eval: async () => {
       throw new Error("network down");
     },
   };

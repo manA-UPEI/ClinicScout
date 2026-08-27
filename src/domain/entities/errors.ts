@@ -1,4 +1,11 @@
-export type AgentErrorKind = "location_not_found" | "network" | "no_results" | "rate_limited";
+export type AgentErrorKind =
+  | "location_not_found"
+  | "network"
+  | "no_results"
+  | "rate_limited"
+  /** The whole deployment is at its ceiling — nothing the caller did wrong, and nothing they can fix by slowing down. */
+  | "at_capacity"
+  | "invalid_input";
 
 export class AgentError extends Error {
   kind: AgentErrorKind;

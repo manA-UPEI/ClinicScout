@@ -13,12 +13,24 @@ const HEADINGS: Record<AgentErrorKind, string> = {
   no_results: "No clinics found nearby",
   network: "Something went wrong",
   rate_limited: "Too many searches",
+  at_capacity: "The service is busy right now",
+  invalid_input: "There's a problem with your search",
 };
+
+/**
+ * `kind` arrives over the wire and is cast, not validated, in app/page.tsx —
+ * so a client running older code against a newer server can be handed a kind
+ * this map has never heard of. Falling back beats rendering a blank heading
+ * above a message that is otherwise perfectly readable.
+ */
+function headingFor(kind: AgentErrorKind): string {
+  return HEADINGS[kind] ?? "Something went wrong";
+}
 
 export default function ErrorState({ kind, message, requestId, onRetry }: Props) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 p-8 text-center">
-      <h2 className="font-semibold">{HEADINGS[kind]}</h2>
+      <h2 className="font-semibold">{headingFor(kind)}</h2>
       <p className="text-sm text-gray-600 dark:text-gray-300">{message}</p>
       {requestId && (
         <p className="text-xs text-gray-400 dark:text-gray-500">Reference: {requestId}</p>

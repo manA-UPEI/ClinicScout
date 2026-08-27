@@ -28,6 +28,10 @@ npm run dev
 The app runs without a key — it just skips website inspection, and any field the
 directory data doesn't cover stays "Unknown".
 
+Accounts are optional too, and off until you configure them. See
+[Signing in](#signing-in) below; with nothing set, every visitor is anonymous
+and the sign-in link does not render.
+
 ## How it works
 
 Gemini runs the search as an **agent**: it decides which tools to call, in what
@@ -249,6 +253,74 @@ Known limits, stated plainly:
   reviewable.
 - OSM data can be stale or incomplete. The UI says to call ahead.
 
+## Signing in
+
+Optional, free, and stateless: [Auth.js](https://authjs.dev) with GitHub
+and/or Google OAuth, no database. The session is a signed, encrypted cookie —
+there is no user table and nothing about you is stored server-side. Anonymous
+access is a supported tier, not a degraded one, so leaving all of this unset
+is a perfectly valid way to run the app.
+
+To turn it on, set `AUTH_SECRET` plus at least one provider pair — see the
+"Accounts" block in `.env.local.example` for the exact variables and where to
+register the OAuth app. Either provider alone is fine; one that is missing
+half its pair is skipped rather than offered as a button that errors.
+
+```bash
+openssl rand -base64 32   # AUTH_SECRET
+```
+
+Rotating `AUTH_SECRET` invalidates every session at once, which is the
+intended emergency lever.
+
+Signing in raises your rate limits: 20 searches and 20 calls per ten minutes,
+against 5 and 8 for anonymous visitors. Both sit under a server-wide ceiling
+of 30 searches and 20 calls per ten minutes, so a busy moment can answer with
+"the service is busy" (HTTP 503) even when your own allowance has room —
+that one is not about you. Anonymous callers get exactly what
+they got before accounts existed — signing in raises a ceiling rather than
+lowering anyone else's. The tiers live in
+`src/domain/policies/rateLimitTiers.ts` if you want to change them.
+
+Because there is no database, there is no account linking: signing in with
+GitHub and with Google gives you two separate identities — and, since the
+rate-limit key is the account id, two separate quotas. That is a deliberate
+trade — see ARCHITECTURE.md's "Accounts" section for why the account id wins
+over the email address as the identifier.
+
+**Confirm it actually took**: `GET /api/health` reports `authConfigured` and
+lists `authProviders`. One gotcha specific to auth — whether the home page
+renders statically or dynamically is decided at *build* time, so if you set
+these variables only in a runtime environment, the sign-in link will never
+appear even though `/api/health` says it is configured. On Vercel the
+variables are present at build too, so this resolves itself.
+
+## Running without spending API quota
+
+`USE_FIXTURES=1` swaps every upstream — geocoding, the clinic directory,
+clinic websites, and both Gemini calls — for canned test data. The whole app
+runs, agent loop included, with no API key needed, no free-tier quota spent,
+and no load on the volunteer-run OpenStreetMap services.
+
+```bash
+USE_FIXTURES=1 npm run dev
+```
+
+It works the same against a production build (`npm run build && USE_FIXTURES=1 npm start`).
+
+The fixture world is five clinics chosen to reach the paths that are otherwise
+awkward to trigger on demand: one that should clearly win, one that needs an
+appointment, one reachable only by phone, a specialty listing the relevance
+filter has to drop, and one with no contact channel at all. Type a location
+containing "nowhere" to exercise the location-not-found error state.
+
+**It is deliberately impossible to miss.** The app paints a banner across
+every page, the run's step log says so on its first line, `GET /api/health`
+reports `upstreams: "fixtures"`, and the server logs a warning at startup.
+Nothing about a fixture run is real, and this app's whole premise is that a
+clinic fact is either confirmed or shown as Unknown — so a fixture deployment
+that looked normal would be the worst thing it could do.
+
 ## Deploying
 
 Everything about this app assumes Vercel — the `maxDuration = 60` budgets in
@@ -258,6 +330,15 @@ function.
 **Set `GEMINI_API_KEY`** as a Vercel environment variable, the same key as
 local dev.
 
+**Set `AUTH_SECRET` and your provider credentials** if you want accounts —
+see [Signing in](#signing-in). Skip them and the deployment runs
+anonymous-only, which is a supported configuration.
+
+**Never set `USE_FIXTURES`** on a deployment real people can reach. It is not
+blocked in production builds, because testing a production build offline is a
+legitimate thing to want — so it is on you not to ship it. `GET /api/health`
+reporting `upstreams: "fixtures"` is the check.
+
 **Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`** before
 sending it any real traffic. Without them, three things quietly degrade the
 moment Vercel runs more than one instance of the app at once, which it will
@@ -266,8 +347,12 @@ they look like they should:
 
 - the search-results and website-inspection caches stop being shared across
   instances, so more requests than necessary hit Overpass and Gemini for real
-- the per-IP rate limiter on `/api/search` and `/api/call` lets through more
-  than its stated limit, since each instance counts independently
+- the rate limiters on `/api/search` and `/api/call` let through more than
+  their stated limits, since each instance counts independently. This applies
+  to every tier — and it matters most for the server-wide ceiling, because a
+  per-caller limit that is 3x too loose still bounds one caller, while a
+  global limit that is 3x too loose does not bound the API quota it exists to
+  protect
 - the one-call-per-clinic rail on agent-placed calls can be bypassed
 
 A free [Upstash](https://upstash.com) Redis database is enough to fix all
