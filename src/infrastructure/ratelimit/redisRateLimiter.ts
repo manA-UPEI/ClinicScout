@@ -51,12 +51,22 @@ export class RedisRateLimiter implements RateLimiter {
     }
 
     if (count <= this.limit) {
-      return { allowed: true, retryAfterMs: 0 };
+      return {
+        allowed: true,
+        retryAfterMs: 0,
+        remaining: Math.max(0, this.limit - count),
+        limit: this.limit,
+      };
     }
 
     const ttl = await this.transport.ttl(fullKey);
     // A missing/expired TTL here (null) would mean the EXPIRE above never
     // landed — fall back to the full window rather than claiming no wait.
-    return { allowed: false, retryAfterMs: (ttl ?? this.windowSeconds) * 1000 };
+    return {
+      allowed: false,
+      retryAfterMs: (ttl ?? this.windowSeconds) * 1000,
+      remaining: 0,
+      limit: this.limit,
+    };
   }
 }

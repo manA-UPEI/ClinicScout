@@ -17,6 +17,14 @@ import { isAuthConfigured } from "../../infrastructure/config/authProviders.ts";
  * header says whether you are signed in.
  */
 export function getCurrentUser(): Promise<AuthenticatedUser | null> {
+  // Short-circuit before touching Auth.js at all when the deployment has no
+  // credentials configured. Two reasons, and the second is the load-bearing
+  // one: there cannot be a session to read without a provider to have issued
+  // it, and `auth()` needs AUTH_SECRET to decrypt a cookie — so calling it
+  // unconditionally would make the rate-limit gate, which now runs on every
+  // request to both API routes, depend on auth being set up. Anonymous-only
+  // is a supported way to run this app; it must not be a broken one.
+  if (!isAuthConfigured()) return Promise.resolve(null);
   return authJsSessionReader.readUser();
 }
 

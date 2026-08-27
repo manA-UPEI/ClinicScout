@@ -12,7 +12,9 @@ export type Send = (event: string, data: unknown) => void;
  */
 export function createSseResponse(
   requestSignal: AbortSignal,
-  run: (send: Send, signal: AbortSignal) => Promise<void>
+  run: (send: Send, signal: AbortSignal) => Promise<void>,
+  /** Merged into the response headers — the RateLimit-* family, so a caller can see its remaining allowance on a successful run and not only on the 429. */
+  extraHeaders: Record<string, string> = {}
 ): Response {
   const encoder = new TextEncoder();
 
@@ -48,6 +50,7 @@ export function createSseResponse(
       // rewrites the body would defeat the streaming entirely.
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      ...extraHeaders,
     },
   });
 }

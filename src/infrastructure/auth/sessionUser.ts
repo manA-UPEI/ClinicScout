@@ -34,8 +34,11 @@ export function accountSubject(provider: string, providerAccountId: string): str
  * A session whose user carries no id is treated as no session at all rather
  * than as a signed-in caller with a blank key. An identity with no stable id
  * is useless to the thing that consumes it — per-user rate limiting — and
- * silently falling back to a blank id would put every such caller in one
- * shared bucket. Better to be honestly anonymous than falsely identified.
+ * defaulting it to "" would put every such caller in one shared bucket while
+ * still granting them the signed-in tier's raised limit, which is the worst
+ * of both. Anonymous callers do share a bucket by design (see SubjectKind in
+ * domain/policies/rateLimitTiers.ts), but they share the anonymous ceiling
+ * with it. Better to be honestly anonymous than falsely identified.
  */
 export function toAuthenticatedUser(session: SessionLike | null): AuthenticatedUser | null {
   const user = session?.user;

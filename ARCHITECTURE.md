@@ -163,6 +163,55 @@ reports `authConfigured: true`. On Vercel the variables are present at build
 too, so this resolves itself; anywhere that separates build and runtime
 environments, set them for both.
 
+## Rate limiting
+
+Three tiers, keyed by how well the caller is identified, defined in
+[domain/policies/rateLimitTiers.ts](src/domain/policies/rateLimitTiers.ts) and
+enforced by
+[interface/http/rateLimitGate.ts](src/interface/http/rateLimitGate.ts) before
+either SSE route does any work.
+
+| Tier | Key | `/api/search` | `/api/call` |
+|---|---|---|---|
+| `user` | Session id (`github:12345`) | 20 / 10 min | 20 / 10 min |
+| `ip` | First `x-forwarded-for` entry | 5 / 10 min | 8 / 10 min |
+| `unidentified` | One shared bucket | 5 / 10 min | 8 / 10 min |
+
+The anonymous numbers are exactly what both routes enforced before accounts
+existed. Signing in raises a ceiling; it never lowers anyone else's. A
+test asserts this, because "we added accounts and your quota dropped" is a
+regression that would be easy to introduce and hard to notice.
+
+**Why a session id is worth more than an address.** Not because the work is
+cheaper, but because the key is better: it survives the caller changing
+networks, and it cannot be forged by setting a header. `clientIp()` says so
+about itself — a forwarded address is spoofable by anyone talking to the
+deployment directly rather than through its proxy, so the `ip` tier slows
+accidental hammering rather than a determined attacker. Verified: the same
+session counts against one bucket across three different forwarded
+addresses.
+
+**Why every unidentifiable caller shares one bucket.** The tempting
+alternative is a fresh key per request, which reads like fairness and is
+actually the absence of a limit — anyone could opt out by dropping a header.
+Sharing fails closed. On a correctly proxied deployment this tier should be
+nearly empty; if it is not, the proxy is not forwarding addresses.
+
+**One limiter per route *and* tier.** The limit is baked into the limiter, so
+the namespace carries both (`search:user`, `search:ip`). Without the tier in
+the key, a user id that happened to look like an address would share its
+bucket.
+
+`RateLimit-Limit` and `RateLimit-Remaining` are returned on every call, so a
+caller sees a limit approaching rather than only discovering it at the 429.
+`RateLimit-Reset` appears only on a rejection: the fixed-window limiters know
+the count but not how much of the window is left, and an app that renders an
+unverified clinic fact as "Unknown" should not invent a header either.
+
+Still per-instance unless Redis is configured — see the deploy notes. A
+server-wide limit, which is the one that actually holds when a hundred
+distinct callers are each politely under their own ceiling, is not built yet.
+
 ## Fixture mode
 
 `USE_FIXTURES=1` replaces all five upstreams — geocoder, clinic directory,
@@ -410,7 +459,9 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [interface/http/sseResponse.ts](src/interface/http/sseResponse.ts) | Shared `ReadableStream`/encoder/abort-listener/close boilerplate for both SSE routes |
 | [interface/http/errors.ts](src/interface/http/errors.ts) | Shared JSON error responder |
 | [interface/http/requestId.ts](src/interface/http/requestId.ts) | One id per request, carried in every error payload and its matching `console.error` line — the thing that makes a user-reported failure findable in logs |
-| [interface/http/clientIp.ts](src/interface/http/clientIp.ts) | Best-effort caller identity from `x-forwarded-for`, used to key the rate limiter |
+| [interface/http/clientIp.ts](src/interface/http/clientIp.ts) | Best-effort caller address from `x-forwarded-for`; returns `null` rather than a placeholder when there is none |
+| [interface/http/rateLimitSubject.ts](src/interface/http/rateLimitSubject.ts) | Which bucket a request counts against — session id, forwarded address, or the shared unidentified bucket |
+| [interface/http/rateLimitGate.ts](src/interface/http/rateLimitGate.ts) | The check both SSE routes run before any work: resolve the subject, consume its tier's limiter, answer 429 or hand back `RateLimit-*` headers |
 
 ### Application — search orchestration
 
@@ -435,6 +486,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 
 | Module | Role |
 |---|---|
+| [domain/policies/rateLimitTiers.ts](src/domain/policies/rateLimitTiers.ts) | What each class of caller gets per route, and whether signing in would raise it — pure, no HTTP |
 | [domain/entities/clinic.ts](src/domain/entities/clinic.ts) | `Clinic`, `RankedClinic`, `ClinicInspection`, `Evidence`, `clinicShortId` |
 | [domain/entities/agentRun.ts](src/domain/entities/agentRun.ts) | `AgentStep`, `AgentReasoning`, `AgentRunResult`, `ActionCase`, `InputFormData` |
 | [domain/entities/errors.ts](src/domain/entities/errors.ts) | `AgentError` |
@@ -468,7 +520,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [infrastructure/ratelimit/rateLimiter.ts](src/infrastructure/ratelimit/rateLimiter.ts) | `RateLimiter` — the shape both limiters below implement |
 | [infrastructure/ratelimit/fixedWindowRateLimiter.ts](src/infrastructure/ratelimit/fixedWindowRateLimiter.ts) | In-memory `RateLimiter`; single-process only — the same caveat as `TtlCache` |
 | [infrastructure/ratelimit/redisRateLimiter.ts](src/infrastructure/ratelimit/redisRateLimiter.ts) | Redis-backed `RateLimiter` — one INCR+EXPIRE counter shared across every serverless instance, which the in-memory version can't offer |
-| [infrastructure/ratelimit/createRateLimiter.ts](src/infrastructure/ratelimit/createRateLimiter.ts) | Picks Redis when configured, else the in-memory limiter — used by both `/api/search` and `/api/call` |
+| [infrastructure/ratelimit/createRateLimiter.ts](src/infrastructure/ratelimit/createRateLimiter.ts) | Picks Redis when configured, else the in-memory limiter — one instance per route *and* tier, built by `rateLimitGate.ts` |
 | [infrastructure/auth/nextAuth.ts](src/infrastructure/auth/nextAuth.ts) | The only module that imports `next-auth`; registers whichever OAuth providers have credentials and stamps the provider-namespaced subject onto the token |
 | [infrastructure/auth/sessionUser.ts](src/infrastructure/auth/sessionUser.ts) | Pure session→`AuthenticatedUser` mapping and the subject format; structurally typed so it — and its tests — never load `next-auth` |
 | [infrastructure/auth/authJsSessionReader.ts](src/infrastructure/auth/authJsSessionReader.ts) | Implements `SessionReader` over `auth()`; an unverifiable cookie lands on the anonymous path rather than raising |

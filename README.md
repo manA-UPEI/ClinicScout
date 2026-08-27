@@ -273,8 +273,15 @@ openssl rand -base64 32   # AUTH_SECRET
 Rotating `AUTH_SECRET` invalidates every session at once, which is the
 intended emergency lever.
 
+Signing in raises your rate limits: 20 searches and 20 calls per ten minutes,
+against 5 and 8 for anonymous visitors. Anonymous callers get exactly what
+they got before accounts existed — signing in raises a ceiling rather than
+lowering anyone else's. The tiers live in
+`src/domain/policies/rateLimitTiers.ts` if you want to change them.
+
 Because there is no database, there is no account linking: signing in with
-GitHub and with Google gives you two separate identities. That is a deliberate
+GitHub and with Google gives you two separate identities — and, since the
+rate-limit key is the account id, two separate quotas. That is a deliberate
 trade — see ARCHITECTURE.md's "Accounts" section for why the account id wins
 over the email address as the identifier.
 
@@ -337,8 +344,9 @@ they look like they should:
 
 - the search-results and website-inspection caches stop being shared across
   instances, so more requests than necessary hit Overpass and Gemini for real
-- the per-IP rate limiter on `/api/search` and `/api/call` lets through more
-  than its stated limit, since each instance counts independently
+- the rate limiter on `/api/search` and `/api/call` lets through more than its
+  stated limit, since each instance counts independently — this applies to
+  every tier, signed-in included
 - the one-call-per-clinic rail on agent-placed calls can be bypassed
 
 A free [Upstash](https://upstash.com) Redis database is enough to fix all
