@@ -39,7 +39,8 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as CallRequestBody | null;
 
   const parsed = parseCallRequest(body);
-  if (!parsed.ok) return badRequest(parsed.kind, parsed.message, parsed.status, requestId);
+  if (!parsed.ok)
+    return badRequest(parsed.kind, parsed.message, parsed.status, requestId, gate.headers);
   const { clinicId, clinicName, phone, persona } = parsed.request;
 
   let session;
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
     session = await createSession({ clinicId, clinicName, phone });
   } catch (e) {
     if (e instanceof CallError && e.kind === "already_active") {
-      return badRequest(e.kind, e.message, 409, requestId);
+      return badRequest(e.kind, e.message, 409, requestId, gate.headers);
     }
     throw e;
   }

@@ -27,7 +27,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
 
   const parsed = parseSearchRequest(body);
-  if (!parsed.ok) return badRequest(parsed.kind, parsed.message, parsed.status, requestId);
+  if (!parsed.ok)
+    return badRequest(parsed.kind, parsed.message, parsed.status, requestId, gate.headers);
   const input = parsed.request;
 
   // Streamed rather than returned whole: an agent run's length depends on how
