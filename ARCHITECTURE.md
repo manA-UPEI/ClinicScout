@@ -209,6 +209,15 @@ caller sees a limit approaching rather than only discovering it at the 429.
 the count but not how much of the window is left, and an app that renders an
 unverified clinic fact as "Unknown" should not invent a header either.
 
+The gate runs before body parsing, on purpose — a request that will be
+rejected anyway should not get to spend the server's time being validated
+first. That means a malformed body, or `/api/call`'s 409 `already_active`
+conflict, has already spent one of the caller's tokens by the time it fails.
+[`badRequest`](src/interface/http/errors.ts) carries the gate's headers on
+those rejections too, so a client backing off on `RateLimit-Remaining` still
+sees the number that should tell it to — the one response class where the
+count used to move with nothing reporting it.
+
 ### The server-wide ceiling
 
 Per-caller limits stop one visitor hammering a route. They do nothing about
@@ -511,7 +520,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [app/api/health/route.ts](src/app/api/health/route.ts) | Reports configuration (Gemini configured, shared-state backend, whether sign-in is possible and with which providers) for an external uptime check — not a live ping of every upstream |
 | [app/api/auth/[...nextauth]/route.ts](src/app/api/auth/%5B...nextauth%5D/route.ts) | Auth.js's own sign-in, callback, sign-out, session and CSRF endpoints; the app writes no auth UI of its own |
 | [interface/http/sseResponse.ts](src/interface/http/sseResponse.ts) | Shared `ReadableStream`/encoder/abort-listener/close boilerplate for both SSE routes |
-| [interface/http/errors.ts](src/interface/http/errors.ts) | Shared JSON error responder |
+| [interface/http/errors.ts](src/interface/http/errors.ts) | Shared JSON error responder; `badRequest` carries the gate's `RateLimit-*` headers, since every caller of it sits past the gate and has already spent a token |
 | [interface/http/requestId.ts](src/interface/http/requestId.ts) | One id per request, carried in every error payload and its matching `console.error` line — the thing that makes a user-reported failure findable in logs |
 | [interface/http/clientIp.ts](src/interface/http/clientIp.ts) | Best-effort caller address from `x-forwarded-for`; returns `null` rather than a placeholder when there is none |
 | [interface/http/rateLimitSubject.ts](src/interface/http/rateLimitSubject.ts) | Which bucket a request counts against — session id, forwarded address, or the shared unidentified bucket |
@@ -622,6 +631,7 @@ than merely incorrect:
 - `redisCache.test.ts` — the stale-read contract and failing open on a transport error, against a fake transport
 - `excludeSpecialtyListings.test.ts` — the agent path and the deterministic pipeline agreeing on the same duplicate-chain input
 - `redisRateLimiter.test.ts` — the INCR+EXPIRE window, and falling back to the full window when a TTL is unexpectedly missing, against a fake transport
+- `errors.test.ts` — a rejected request still reports the allowance it just spent, and that a capacity rejection deliberately does not
 - `ttlCache.test.ts`, `fetchPageLinks.test.ts`, `sseFrame.test.ts`, `actionability.test.ts`, `agentState.test.ts`, `fixedWindowRateLimiter.test.ts` — the supporting pure functions
 
 ```bash
