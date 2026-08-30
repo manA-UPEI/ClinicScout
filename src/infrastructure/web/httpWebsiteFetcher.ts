@@ -101,20 +101,58 @@ interface FetchedHtml {
   html: string;
 }
 
-/** Network fetch + SSRF guard + incremental decode, shared by every fetch below. */
+/**
+ * How many redirect hops to follow before giving up. `fetch`'s own default
+ * (20) is generous enough to be a redirect-loop DoS on its own once each hop
+ * needs a fresh DNS lookup, and no legitimate clinic site needs more than a
+ * couple of hops anyway.
+ */
+const MAX_REDIRECTS = 5;
+
+/**
+ * Network fetch + SSRF guard + incremental decode, shared by every fetch
+ * below.
+ *
+ * Redirects are followed by hand rather than via `redirect: "follow"`.
+ * `isSafeUrl` only ever validated the URL it was handed — with automatic
+ * redirect-following, a clinic "website" (untrusted OSM data, see the module
+ * doc comment) that 302s to a private or link-local address would be
+ * followed straight there by `fetch` itself, after the one check that was
+ * supposed to prevent exactly that had already passed. Re-running the same
+ * guard on every hop's Location header closes that gap instead of trusting
+ * the first URL to vouch for everywhere the server redirects to.
+ */
 async function fetchHtml(rawUrl: string): Promise<FetchedHtml | null> {
-  const url = await isSafeUrl(rawUrl);
+  let url = await isSafeUrl(rawUrl);
   if (!url) return null;
 
   let response: Response;
-  try {
-    response = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      redirect: "follow",
-    });
-  } catch {
-    return null;
+  for (let hop = 0; ; hop++) {
+    try {
+      response = await fetch(url, {
+        headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        redirect: "manual",
+      });
+    } catch {
+      return null;
+    }
+
+    if (response.status < 300 || response.status >= 400) break;
+
+    const location = response.headers.get("location");
+    if (!location || hop >= MAX_REDIRECTS) return null;
+
+    let nextRaw: string;
+    try {
+      nextRaw = new URL(location, url).toString();
+    } catch {
+      return null;
+    }
+
+    const nextUrl = await isSafeUrl(nextRaw);
+    if (!nextUrl) return null;
+    url = nextUrl;
   }
 
   if (!response.ok || !response.body) return null;
