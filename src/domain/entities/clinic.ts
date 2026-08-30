@@ -7,6 +7,8 @@ export interface Coordinates {
 
 export interface GeocodedLocation extends Coordinates {
   display_name: string;
+  /** ISO 3166-1 alpha-2, lowercase, as Nominatim reports it. Null when the geocoder didn't return one. */
+  countryCode: string | null;
 }
 
 /**

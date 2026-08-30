@@ -10,6 +10,7 @@ import EmergencyBanner from "./EmergencyBanner";
 interface Props {
   ranked: RankedClinic[];
   resolvedLocation: string;
+  countryCode: string | null;
   urgency: Urgency;
   excluded: ExcludedSpecialty[];
   agentReasoning: AgentReasoning | null;
@@ -50,6 +51,7 @@ function AgentRationale({ reasoning }: { reasoning: AgentReasoning }) {
 export default function RecommendationView({
   ranked,
   resolvedLocation,
+  countryCode,
   urgency,
   excluded,
   agentReasoning,
@@ -61,7 +63,7 @@ export default function RecommendationView({
 
   return (
     <div className="flex flex-col gap-6 py-6">
-      {urgency === "emergency_adjacent" && <EmergencyBanner />}
+      {urgency === "emergency_adjacent" && <EmergencyBanner countryCode={countryCode} />}
 
       <p className="text-sm text-gray-500 dark:text-gray-400">
         Results near {resolvedLocation}

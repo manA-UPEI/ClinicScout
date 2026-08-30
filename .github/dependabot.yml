@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # npm dependencies — weekly, grouped so a routine update is one PR to
+  # review rather than a dozen, with the CI job's own `npm audit` step
+  # gating anything that doesn't actually resolve.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      dependencies:
+        patterns:
+          - "*"
+
+  # The workflow files themselves — actions/checkout, actions/setup-node,
+  # etc. — age the same way any other dependency does.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

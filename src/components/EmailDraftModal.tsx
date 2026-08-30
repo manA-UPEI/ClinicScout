@@ -10,6 +10,15 @@ interface Props {
   onClose: () => void;
 }
 
+/**
+ * Drafts an email and hands it to the user's own mail app to actually send —
+ * this app never sends anything itself. That's not a lesser version of
+ * "real": a mailto: link is the honest version of this feature, the same way
+ * the call-clinic action is a plain tel: link rather than the app placing a
+ * call. The only manual step left once it opens is filling in
+ * `[Your Name]`, which draftAppointmentEmail.ts leaves as a placeholder on
+ * purpose rather than guessing at who's asking.
+ */
 export default function EmailDraftModal({
   clinicName,
   recipientEmail,
@@ -26,18 +35,21 @@ export default function EmailDraftModal({
 
   const [subject, setSubject] = useState(draft.subject_line);
   const [body, setBody] = useState(draft.email_body);
-  const [sent, setSent] = useState(false);
+  const [opened, setOpened] = useState(false);
+
+  const mailtoHref = `mailto:${recipientEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-xl bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/15 p-6 shadow-xl">
-        {sent ? (
+        {opened ? (
           <div className="flex flex-col items-center gap-3 py-6 text-center">
             <p className="text-lg font-semibold">
-              ✅ Email marked as sent (mock — no real email was sent)
+              📤 Opened in your email app
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              To: {recipientEmail}
+              Add your name and hit send from there. This only handed the
+              draft off to your own email app — nothing was sent from here.
             </p>
             <button
               onClick={onClose}
@@ -52,8 +64,9 @@ export default function EmailDraftModal({
               {mode === "booking" ? "Review appointment request" : "Review general inquiry"}
             </h2>
             <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">
-              To: {recipientEmail} — review and edit before sending. Nothing is
-              sent until you approve.
+              To: {recipientEmail} — review and edit below, then send it
+              yourself from your own email app. This app never sends
+              anything on its own.
             </p>
 
             <label className="flex flex-col gap-1 text-sm font-medium">
@@ -82,12 +95,13 @@ export default function EmailDraftModal({
               >
                 Cancel
               </button>
-              <button
-                onClick={() => setSent(true)}
+              <a
+                href={mailtoHref}
+                onClick={() => setOpened(true)}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
               >
-                Approve & Send (Mock)
-              </button>
+                Open in Email App
+              </a>
             </div>
           </>
         )}

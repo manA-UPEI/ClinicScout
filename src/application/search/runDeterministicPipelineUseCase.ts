@@ -199,6 +199,7 @@ export async function runDeterministicPipeline(
     steps,
     ranked,
     resolvedLocation: place.display_name,
+    countryCode: place.countryCode,
     urgency: input.urgency,
     excluded,
     mode: "deterministic",

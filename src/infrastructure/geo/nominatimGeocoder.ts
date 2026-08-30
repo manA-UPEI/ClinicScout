@@ -1,6 +1,7 @@
 import { AgentError } from "../../domain/entities/errors.ts";
 import type { GeocodedLocation } from "../../domain/entities/clinic.ts";
 import type { Geocoder } from "../../application/ports/geocoder.ts";
+import { createCache } from "../cache/createCache.ts";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 
@@ -11,10 +12,23 @@ interface NominatimResult {
   lat: string;
   lon: string;
   display_name: string;
+  address?: { country_code?: string };
 }
 
-export async function geocode(location: string): Promise<GeocodedLocation> {
-  const url = `${NOMINATIM_URL}?q=${encodeURIComponent(location)}&format=json&limit=1`;
+// A resolved location doesn't go stale the way clinic listings do, but the
+// same 24h figure the search cache uses keeps the privacy note in
+// Footer.tsx — "cached for up to 24 hours" — true of every upstream this app
+// calls, not just the one it originally described.
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const cache = createCache<GeocodedLocation>("geocode", CACHE_TTL_MS);
+
+/** Case/whitespace-insensitive, so "Toronto" and " toronto " share one entry. */
+function geocodeCacheKey(location: string): string {
+  return location.trim().toLowerCase();
+}
+
+async function fetchGeocode(location: string): Promise<GeocodedLocation> {
+  const url = `${NOMINATIM_URL}?q=${encodeURIComponent(location)}&format=json&limit=1&addressdetails=1`;
 
   let response: Response;
   try {
@@ -42,7 +56,26 @@ export async function geocode(location: string): Promise<GeocodedLocation> {
     lat: Number(results[0].lat),
     lon: Number(results[0].lon),
     display_name: results[0].display_name,
+    countryCode: results[0].address?.country_code ?? null,
   };
+}
+
+/**
+ * Cached in front of `fetchGeocode`: a repeat search for the same typed
+ * location — the common case when someone widens the radius rather than
+ * retyping where they are — resolves from cache instead of hitting Nominatim
+ * again, the same win `overpassClinicDirectory.ts` already gets for the
+ * clinic search itself.
+ */
+export async function geocode(location: string): Promise<GeocodedLocation> {
+  const key = geocodeCacheKey(location);
+
+  const cached = await cache.get(key);
+  if (cached) return cached;
+
+  const place = await fetchGeocode(location);
+  await cache.set(key, place);
+  return place;
 }
 
 /** The Geocoder port implementation, adapting the plain `geocode` function above. */

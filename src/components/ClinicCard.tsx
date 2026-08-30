@@ -1,7 +1,15 @@
 import { ReactNode } from "react";
 import { InspectableField, RankedClinic, Relevance } from "@/domain/entities/clinic";
 import { isDeadEnd } from "@/domain/policies/actionability";
+import { draft_clinic_issue_report } from "@/domain/services/reportClinicIssue";
 import FieldValue from "./FieldValue";
+
+// Public by design — a contact address is not a secret, and this is the one
+// value that must reach the client bundle to build a mailto: link with no
+// server round trip. Unset in a deployment, the link below simply doesn't
+// render, the same way the sign-in link doesn't when no OAuth provider is
+// configured (AuthStatus.tsx).
+const REPORT_EMAIL = process.env.NEXT_PUBLIC_REPORT_EMAIL;
 
 interface Props {
   clinic: RankedClinic;
@@ -149,16 +157,31 @@ export default function ClinicCard({ clinic, variant }: Props) {
         </details>
       )}
 
-      <a
-        href={clinic.source_url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-2 inline-block text-xs text-gray-400 dark:text-gray-500 hover:underline"
-      >
-        View data source
-      </a>
+      <div className="mt-2 flex gap-3">
+        <a
+          href={clinic.source_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block text-xs text-gray-400 dark:text-gray-500 hover:underline"
+        >
+          View data source
+        </a>
+        {REPORT_EMAIL && (
+          <a
+            href={mailtoHref(REPORT_EMAIL, clinic.clinic_name, clinic.source_url)}
+            className="inline-block text-xs text-gray-400 dark:text-gray-500 hover:underline"
+          >
+            Report incorrect information
+          </a>
+        )}
+      </div>
     </div>
   );
+}
+
+function mailtoHref(email: string, clinicName: string, sourceUrl: string): string {
+  const { subject, body } = draft_clinic_issue_report(clinicName, sourceUrl);
+  return `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 const LABELS: Record<InspectableField, string> = {

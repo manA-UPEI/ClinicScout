@@ -409,11 +409,11 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [components/SearchingState.tsx](src/components/SearchingState.tsx) | Pre-stream spinner; says so when the directory is slow past 12s |
 | [components/AgentProgress.tsx](src/components/AgentProgress.tsx) | Live transparency log — one line per streamed step, paced by the run itself |
 | [components/RecommendationView.tsx](src/components/RecommendationView.tsx) | Best pick, alternatives, agent rationale, set-aside specialty listings |
-| [components/ClinicCard.tsx](src/components/ClinicCard.tsx) | One clinic, with a ✓ on each field quoted from the clinic's own site |
+| [components/ClinicCard.tsx](src/components/ClinicCard.tsx) | One clinic, with a ✓ on each field quoted from the clinic's own site; a mailto "report incorrect information" link when `NEXT_PUBLIC_REPORT_EMAIL` is set |
 | [components/FieldValue.tsx](src/components/FieldValue.tsx) | The only renderer for a nullable field — `null` always prints "Unknown", never a guessed "No" |
 | [components/ActionPanel.tsx](src/components/ActionPanel.tsx) | Renders whichever next action `determineAction` selected |
-| [components/EmailDraftModal.tsx](src/components/EmailDraftModal.tsx) | Editable draft, explicitly mocked — nothing is ever sent |
-| [components/EmergencyBanner.tsx](src/components/EmergencyBanner.tsx) | Sits above results when the request is emergency-adjacent |
+| [components/EmailDraftModal.tsx](src/components/EmailDraftModal.tsx) | Editable draft handed to the user's own mail app via a `mailto:` link — the app itself never sends anything |
+| [components/EmergencyBanner.tsx](src/components/EmergencyBanner.tsx) | Sits above results when the request is emergency-adjacent; names a specific emergency number when `emergencyNumberFor` recognizes the searched country, else a generic hedge |
 | [components/FixtureBanner.tsx](src/components/FixtureBanner.tsx) | Unmissable warning across every page when `USE_FIXTURES` is on and nothing rendered is real |
 | [components/AuthStatus.tsx](src/components/AuthStatus.tsx) | Rendered in `app/layout.tsx` — who you are and the one link that changes it; renders nothing at all when no OAuth provider is configured |
 | [components/Footer.tsx](src/components/Footer.tsx) | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished; the emergency-services, search-location-privacy and account-data disclaimer |
@@ -471,6 +471,8 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [domain/policies/excludeSpecialtyListings.ts](src/domain/policies/excludeSpecialtyListings.ts) | `partitionBySpecialty` — the specialty-exclusion rule shared by the agent path and the deterministic pipeline |
 | [domain/policies/openingHours.ts](src/domain/policies/openingHours.ts) | Conservative OSM `opening_hours` parser — unsupported syntax returns `null`, never a guess |
 | [domain/services/draftAppointmentEmail.ts](src/domain/services/draftAppointmentEmail.ts) | Pure template function |
+| [domain/services/reportClinicIssue.ts](src/domain/services/reportClinicIssue.ts) | Pure template function for the "report incorrect information" mailto link |
+| [domain/policies/emergencyNumber.ts](src/domain/policies/emergencyNumber.ts) | A specific emergency number for a short, high-confidence list of countries; `null` — never a guess — for everywhere else |
 | [domain/verification/quoteMatch.ts](src/domain/verification/quoteMatch.ts) | `findVerbatimMatch` — the verbatim-quote primitive Lane A of the fact firewall relies on |
 | [domain/verification/pageEvidence.ts](src/domain/verification/pageEvidence.ts) | Quote verification against a fetched page, plus the separate gate on translated opening hours |
 
@@ -478,7 +480,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 
 | Module | Role |
 |---|---|
-| [infrastructure/geo/nominatimGeocoder.ts](src/infrastructure/geo/nominatimGeocoder.ts) | Nominatim lookup; implements `Geocoder` |
+| [infrastructure/geo/nominatimGeocoder.ts](src/infrastructure/geo/nominatimGeocoder.ts) | Nominatim lookup, 24h-cached per normalized location string; implements `Geocoder` |
 | [infrastructure/geo/overpassClinicDirectory.ts](src/infrastructure/geo/overpassClinicDirectory.ts) | Overpass query with retry and backoff; 24h cache that serves stale data rather than failing; implements `ClinicDirectory` |
 | [infrastructure/web/httpWebsiteFetcher.ts](src/infrastructure/web/httpWebsiteFetcher.ts) | SSRF-guarded fetch, HTML-to-text, same-origin link discovery; implements `WebsiteFetcher` |
 | [infrastructure/llm/geminiHttpClient.ts](src/infrastructure/llm/geminiHttpClient.ts) | Shared POST/timeout/error-classification transport used by both Gemini adapters below |
@@ -511,7 +513,7 @@ upstream services off the client's origin entirely.
 
 | Service | Called by | Handling |
 |---|---|---|
-| OSM Nominatim | `geocode()` | 15s timeout. A location it cannot resolve is the user's to fix, so it surfaces as an error rather than being worked around |
+| OSM Nominatim | `geocode()` | 15s timeout, 24h cache per normalized location string. A location it cannot resolve is the user's to fix, so it surfaces as an error rather than being worked around |
 | OSM Overpass | `search_clinics()` | `amenity=clinic\|doctors` within a radius. Two attempts with backoff on 429/5xx; falls back to expired cache before failing, and says so in the step log |
 | Google Gemini | Agent loop (function calling) · website extraction (structured JSON) | Pinned to `gemini-2.5-flash`, 20s timeout. Quota errors named distinctly from network errors — they are different problems with different fixes |
 | Clinic websites | `inspect_clinic_websites` | Untrusted: URLs come from publicly editable OSM tags. Hosts are DNS-resolved and rejected if they land in a private range; 8s timeout, 500KB and 15K-char caps, cross-origin links never followed |
@@ -536,7 +538,7 @@ than merely incorrect:
 - `excludeSpecialtyListings.test.ts` — the agent path and the deterministic pipeline agreeing on the same duplicate-chain input
 - `redisRateLimiter.test.ts` — the INCR+EXPIRE window, and falling back to the full window when a TTL is unexpectedly missing, against a fake transport
 - `errors.test.ts` — a rejected request still reports the allowance it just spent, and that a capacity rejection deliberately does not
-- `ttlCache.test.ts`, `fetchPageLinks.test.ts`, `sseFrame.test.ts`, `actionability.test.ts`, `agentState.test.ts`, `fixedWindowRateLimiter.test.ts` — the supporting pure functions
+- `ttlCache.test.ts`, `fetchPageLinks.test.ts`, `sseFrame.test.ts`, `actionability.test.ts`, `agentState.test.ts`, `fixedWindowRateLimiter.test.ts`, `emergencyNumber.test.ts`, `reportClinicIssue.test.ts` — the supporting pure functions
 
 ```bash
 npm test

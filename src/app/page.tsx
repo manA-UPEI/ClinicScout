@@ -91,6 +91,7 @@ export default function Page() {
         <RecommendationView
           ranked={result.ranked}
           resolvedLocation={result.resolvedLocation}
+          countryCode={result.countryCode}
           urgency={result.urgency}
           excluded={result.excluded}
           agentReasoning={result.agentReasoning}

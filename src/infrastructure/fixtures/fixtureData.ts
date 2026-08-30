@@ -39,6 +39,7 @@ export const FIXTURE_PLACE: GeocodedLocation = {
   lat: 43.6532,
   lon: -79.3832,
   display_name: "Toronto, Ontario, Canada (fixture data — not a real search)",
+  countryCode: "ca",
 };
 
 export const CLINIC_SEEDS: ClinicSeed[] = [
