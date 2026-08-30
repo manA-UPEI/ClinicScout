@@ -46,6 +46,12 @@ const mustNotGuess: (string | null)[] = [
   "Mo-Fr",
   "garbage value",
   "Mo-Fr 25:00-99:00",
+  // Spans crossing midnight need a day-boundary model this parser doesn't
+  // have. Evaluating them naively (start > end) would report "closed" at
+  // every hour, including hours the clinic is genuinely open — worse than
+  // admitting it can't be evaluated.
+  "Mo-Su 22:00-02:00",
+  "Fr,Sa 21:00-01:00",
 ];
 
 test("evaluates supported opening_hours formats", () => {
