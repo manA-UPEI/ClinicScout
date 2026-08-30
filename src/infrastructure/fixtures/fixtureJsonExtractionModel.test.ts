@@ -4,17 +4,6 @@ import { fixtureGenerateJson } from "./fixtureJsonExtractionModel.ts";
 import { fixturePageFor, CLINIC_SEEDS } from "./fixtureData.ts";
 import { verifyAgainstPage } from "../../domain/verification/pageEvidence.ts";
 import type { ClinicInspection } from "../../domain/entities/clinic.ts";
-import type { ResponseSchema } from "../llm/geminiJsonClient.ts";
-
-const INSPECTION_SCHEMA = {
-  type: "OBJECT",
-  properties: { accepts_walk_ins: { type: "BOOLEAN" } },
-} as unknown as ResponseSchema;
-
-const CALL_SCHEMA = {
-  type: "OBJECT",
-  properties: { findings: { type: "ARRAY" } },
-} as unknown as ResponseSchema;
 
 function inspectionPrompt(clinicName: string, page: string): string {
   return `Clinic name: ${clinicName}\n\n${page}`;
@@ -32,8 +21,7 @@ test("every canned extraction survives the page-evidence firewall", async () => 
     if (!page) continue;
 
     const raw = await fixtureGenerateJson<Partial<ClinicInspection>>(
-      inspectionPrompt(seed.name, page),
-      INSPECTION_SCHEMA
+      inspectionPrompt(seed.name, page)
     );
     const verified = verifyAgainstPage(raw!, page);
 
@@ -53,8 +41,7 @@ test("every canned extraction survives the page-evidence firewall", async () => 
 test("the walk-in clinic's confirmed facts survive verification", async () => {
   const page = fixturePageFor("https://harbourfront-walkin.example")!;
   const raw = await fixtureGenerateJson<Partial<ClinicInspection>>(
-    inspectionPrompt("Harbourfront Walk-In Clinic", page),
-    INSPECTION_SCHEMA
+    inspectionPrompt("Harbourfront Walk-In Clinic", page)
   );
   const verified = verifyAgainstPage(raw!, page);
 
@@ -65,49 +52,9 @@ test("the walk-in clinic's confirmed facts survive verification", async () => {
 
 test("an unknown clinic name extracts nothing rather than inventing", async () => {
   const raw = await fixtureGenerateJson<Partial<ClinicInspection>>(
-    inspectionPrompt("Some Clinic That Is Not A Fixture", "irrelevant page text"),
-    INSPECTION_SCHEMA
+    inspectionPrompt("Some Clinic That Is Not A Fixture", "irrelevant page text")
   );
 
   assert.deepEqual(raw!.evidence, []);
   assert.equal(raw!.accepts_walk_ins ?? null, null);
-});
-
-test("call findings quote the clinic's own transcript lines", async () => {
-  const prompt = [
-    "ASSISTANT: Do you accept walk-ins today?",
-    "CLINIC: Yes, we take walk-ins until six this evening.",
-    "CLINIC: The wait is about 40 minutes right now.",
-  ].join("\n");
-
-  const result = await fixtureGenerateJson<{
-    findings: { field: string; value: string; quote: string }[];
-  }>(prompt, CALL_SCHEMA);
-
-  const fields = result!.findings.map((f) => f.field);
-  assert.ok(fields.includes("accepts_walk_ins_today"));
-  assert.ok(fields.includes("current_wait"));
-  for (const finding of result!.findings) {
-    assert.ok(
-      prompt.includes(finding.quote),
-      `quote not found verbatim in the transcript: ${finding.quote}`
-    );
-  }
-});
-
-// The transcript firewall only accepts quotes from clinic turns, so a fixture
-// that quoted the assistant would produce zero verified findings.
-test("call findings never quote the assistant's own lines", async () => {
-  const prompt = [
-    "ASSISTANT: I understand the wait is about 90 minutes and you take walk-ins.",
-    "CLINIC: I can't say right now.",
-  ].join("\n");
-
-  const result = await fixtureGenerateJson<{
-    findings: { quote: string }[];
-  }>(prompt, CALL_SCHEMA);
-
-  for (const finding of result!.findings) {
-    assert.ok(!finding.quote.includes("I understand the wait"));
-  }
 });

@@ -169,16 +169,16 @@ Three tiers, keyed by how well the caller is identified, defined in
 [domain/policies/rateLimitTiers.ts](src/domain/policies/rateLimitTiers.ts) and
 enforced by
 [interface/http/rateLimitGate.ts](src/interface/http/rateLimitGate.ts) before
-either SSE route does any work.
+the search SSE route does any work.
 
-| Tier | Key | `/api/search` | `/api/call` |
-|---|---|---|---|
-| `user` | Session id (`github:12345`) | 20 / 10 min | 20 / 10 min |
-| `ip` | First `x-forwarded-for` entry | 5 / 10 min | 8 / 10 min |
-| `unidentified` | One shared bucket | 5 / 10 min | 8 / 10 min |
-| *(server-wide)* | One key for the whole deployment | 30 / 10 min | 20 / 10 min |
+| Tier | Key | `/api/search` |
+|---|---|---|
+| `user` | Session id (`github:12345`) | 20 / 10 min |
+| `ip` | First `x-forwarded-for` entry | 5 / 10 min |
+| `unidentified` | One shared bucket | 5 / 10 min |
+| *(server-wide)* | One key for the whole deployment | 30 / 10 min |
 
-The anonymous numbers are exactly what both routes enforced before accounts
+The anonymous numbers are exactly what the route enforced before accounts
 existed. Signing in raises a ceiling; it never lowers anyone else's. A
 test asserts this, because "we added accounts and your quota dropped" is a
 regression that would be easy to introduce and hard to notice.
@@ -211,12 +211,11 @@ unverified clinic fact as "Unknown" should not invent a header either.
 
 The gate runs before body parsing, on purpose — a request that will be
 rejected anyway should not get to spend the server's time being validated
-first. That means a malformed body, or `/api/call`'s 409 `already_active`
-conflict, has already spent one of the caller's tokens by the time it fails.
-[`badRequest`](src/interface/http/errors.ts) carries the gate's headers on
-those rejections too, so a client backing off on `RateLimit-Remaining` still
-sees the number that should tell it to — the one response class where the
-count used to move with nothing reporting it.
+first. That means a malformed body has already spent one of the caller's
+tokens by the time it fails. [`badRequest`](src/interface/http/errors.ts)
+carries the gate's headers on that rejection too, so a client backing off on
+`RateLimit-Remaining` still sees the number that should tell it to — the one
+response class where the count used to move with nothing reporting it.
 
 ### The server-wide ceiling
 
@@ -225,8 +224,8 @@ what actually exhausts a free-tier quota: many distinct callers, each politely
 under their own limit, adding up. Two hundred people taking five searches each
 is a thousand searches, every one of them within the rules.
 
-So both routes also count against one key for the whole deployment — 30
-searches and 20 calls per ten minutes. Those numbers are derived, not chosen:
+So the route also counts against one key for the whole deployment — 30
+searches per ten minutes. Those numbers are derived, not chosen:
 a search spends up to ~6 Gemini calls and a free-tier key allows on the order
 of 15 requests a minute, so roughly 2.5 searches a minute is what the quota
 sustains. `globalTierFor` in the tier policy carries the arithmetic, because
@@ -349,13 +348,11 @@ A rejection in Lane B is not a crash — it goes back as a `functionResponse` so
 the model can correct the citation and try again, which is a real self-correction
 loop rather than a hard failure.
 
-Both lanes share one primitive — [domain/verification/quoteMatch.ts](src/domain/verification/quoteMatch.ts)'s
+Lane A relies on one primitive — [domain/verification/quoteMatch.ts](src/domain/verification/quoteMatch.ts)'s
 `findVerbatimMatch()` — for "does this quote appear verbatim in one of these
-sources". What differs per lane is what counts as a source: Lane A's whole page
-text, or (for the call flow's parallel firewall, below) only the clinic's own
-turns in a transcript. That distinction is enforced by what each lane
-*constructs and passes in*, not by the shared primitive, so it cannot be
-weakened by sharing code.
+sources", evaluated against the whole fetched page text. Lane B never calls
+it directly: a cited field passing Lane B's check means it was already
+confirmed non-null by Lane A.
 
 ### The usability floor
 
@@ -377,92 +374,6 @@ rather than requested in the prompt:
 Each check only bites while a genuinely better option exists. If every clinic
 nearby is a dead end, or every one is closed, saying so honestly is the best
 answer available and the agent is left free to give it.
-
-## Agent-placed calls
-
-A second, user-initiated flow that runs after a recommendation: the agent phones
-the clinic and asks whether it is taking walk-ins. It is **inquire-only** — no
-code path commits a booking — and **simulated**, against a scripted receptionist.
-
-It is a separate flow rather than a seventh tool on the search agent for a
-concrete reason: the search loop budgets 40s for an entire run, and a phone call
-is minutes. Calls therefore get their own route, their own session store, and
-their own stream.
-
-```mermaid
-flowchart TD
-    C["CallConsentModal<br/>shows the exact script, requires approval"]
-    R["POST /api/call<br/>rejects without consented: true"]
-    S["createSession<br/>one live call per clinic"]
-    P["CallProvider.place<br/>mock today, Twilio + Gemini Live later"]
-    T["transcript of turns<br/>each tagged agent or clinic"]
-    X["extractFindings<br/>proposes what the clinic said"]
-    V{"quote found in a<br/>CLINIC turn?"}
-    K["finding kept<br/>shown with ✓ and the quote"]
-    U["rejected → renders Unknown"]
-
-    C -->|"user approves"| R --> S --> P
-    P -->|"onTurn, streamed as SSE"| T
-    T --> X --> V
-    V -->|yes| K
-    V -->|no| U
-```
-
-The ordering is the safety property. A provider only ever produces **speech**;
-turning speech into claimed facts, and claimed facts into confirmed ones,
-happens after the line is down, in code the provider cannot influence. No
-adapter — mock or live — can hand back a "finding", only words somebody said.
-
-### Why the haystack excludes the agent's own turns
-
-Half a transcript is the agent talking. An agent that asks a leading question
-("so that's about forty-five minutes?") and receives a grunt could quote its own
-sentence as evidence, converting its guess into a verified fact. Restricting the
-haystack to clinic turns removes the possibility rather than discouraging it —
-the same move the app makes everywhere else it puts a model near a claim.
-
-### Constraints carried by the design
-
-| Concern | Where it is enforced |
-|---|---|
-| Undisclosed AI caller | `DISCLOSURE` is a constant at index 0 of `buildScript`, never model-generated |
-| Patient detail leaking | The script has one slot — the clinic name. `buildScript.length === 1` is asserted in the suite |
-| Booking something unreviewed | No commitment path exists in this phase |
-| Repeated calls to one clinic | `activeSessionFor` — one live session per clinic |
-| A call that never ends | `MAX_CALL_MS`, plus the user's abort, combined into one signal in `runCall` |
-| Mining a voicemail for facts | `buildOutcome` discards all findings unless the status is `completed` |
-
-### Modules
-
-| Module | Role |
-|---|---|
-| [domain/entities/call.ts](src/domain/entities/call.ts) | `CallSession`, `CallStatus`, `CallTurn`, findings, and the user-facing status notes |
-| [domain/services/callScript.ts](src/domain/services/callScript.ts) | The bounded script, the disclosure, and the refusal/IVR/voicemail detectors |
-| [application/ports/callSessionStore.ts](src/application/ports/callSessionStore.ts) | `CallSessionStore` — storage primitives; `callSessionService.ts` owns transition legality and one-call-per-clinic |
-| [application/call/callSessionService.ts](src/application/call/callSessionService.ts) | Lifecycle state machine (transition legality, one-call-per-clinic) |
-| [infrastructure/call/inMemoryCallSessionStore.ts](src/infrastructure/call/inMemoryCallSessionStore.ts) | The Map-based `CallSessionStore` — single process only |
-| [infrastructure/call/redisCallSessionStore.ts](src/infrastructure/call/redisCallSessionStore.ts) | Redis-backed `CallSessionStore` — the one-call-per-clinic claim is a Redis SET-NX, atomic across instances |
-| [infrastructure/call/createCallSessionStore.ts](src/infrastructure/call/createCallSessionStore.ts) | Picks Redis when `UPSTASH_REDIS_REST_URL`/`_TOKEN` are set, else the in-memory store |
-| [domain/verification/transcriptEvidence.ts](src/domain/verification/transcriptEvidence.ts) | The clinic-turns-only firewall and `buildOutcome` |
-| [application/call/extractFindingsUseCase.ts](src/application/call/extractFindingsUseCase.ts) | Proposes findings — Gemini when configured, a conservative sentence scan otherwise |
-| [application/call/placeCallUseCase.ts](src/application/call/placeCallUseCase.ts) | Drives one call: dial, stream turns, extract, verify, record |
-| [application/call/parseCallRequest.ts](src/application/call/parseCallRequest.ts) | Request-shape and consent validation, extracted out of the route handler |
-| [application/ports/callProvider.ts](src/application/ports/callProvider.ts) | The `CallProvider` interface, shaped for Twilio Media Streams + Gemini Live |
-| [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts) | Seven scripted receptionists, one per real-world failure mode |
-| [app/api/call/route.ts](src/app/api/call/route.ts) | POST + SSE; hanging up is the client aborting the fetch, via `request.signal` |
-| [components/CallPanel.tsx](src/components/CallPanel.tsx) | Owns the flow; renders consent, progress and outcome |
-| [components/CallConsentModal.tsx](src/components/CallConsentModal.tsx) | Renders the script from the same `buildScript` the call runs, so it cannot drift |
-| [components/CallProgress.tsx](src/components/CallProgress.tsx) | Live turn-by-turn transcript with a hang-up control |
-| [components/CallOutcomeCard.tsx](src/components/CallOutcomeCard.tsx) | Findings with ✓ and quote; rejected fields via `FieldValue` |
-
-### Deferred to Phase 2
-
-Live telephony, and the operational gating it requires: a verified caller ID, a
-number allowlist, per-call rate limits, and jurisdiction review of AI-voice
-disclosure rules. A real call also outlives its request, so it needs provider
-webhooks — the session surviving past one request is the part a durable store
-alone doesn't solve, since this phase's call still lives entirely inside one
-held-open stream regardless of which `CallSessionStore` backs it.
 
 ## Priority waterfall
 
@@ -507,7 +418,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [components/AuthStatus.tsx](src/components/AuthStatus.tsx) | Rendered in `app/layout.tsx` — who you are and the one link that changes it; renders nothing at all when no OAuth provider is configured |
 | [components/Footer.tsx](src/components/Footer.tsx) | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished; the emergency-services, search-location-privacy and account-data disclaimer |
 | [components/ErrorState.tsx](src/components/ErrorState.tsx) | Renders an `AgentError` by kind, with a retry |
-| [components/hooks/useStreamedSse.ts](src/components/hooks/useStreamedSse.ts) | Owns one POST-and-stream-SSE request's `AbortController`; used by both the search flow and `CallPanel` |
+| [components/hooks/useStreamedSse.ts](src/components/hooks/useStreamedSse.ts) | Owns one POST-and-stream-SSE request's `AbortController`, used by the search flow |
 | [shared/sse/postAndStream.ts](src/shared/sse/postAndStream.ts) | The framework-agnostic fetch + content-type check + SSE read loop the hook wraps |
 | [shared/sse/sseFrame.ts](src/shared/sse/sseFrame.ts) | Hand-rolled SSE frame parser — `EventSource` cannot issue a POST |
 | [domain/policies/determineAction.ts](src/domain/policies/determineAction.ts) | Pure routing: book online, verified email, unverified email, call only, or no contact available |
@@ -519,12 +430,12 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [app/api/search/route.ts](src/app/api/search/route.ts) | Thin controller: parse → validate shape → `runClinicSearch` → SSE-frame events |
 | [app/api/health/route.ts](src/app/api/health/route.ts) | Reports configuration (Gemini configured, shared-state backend, whether sign-in is possible and with which providers) for an external uptime check — not a live ping of every upstream |
 | [app/api/auth/[...nextauth]/route.ts](src/app/api/auth/%5B...nextauth%5D/route.ts) | Auth.js's own sign-in, callback, sign-out, session and CSRF endpoints; the app writes no auth UI of its own |
-| [interface/http/sseResponse.ts](src/interface/http/sseResponse.ts) | Shared `ReadableStream`/encoder/abort-listener/close boilerplate for both SSE routes |
+| [interface/http/sseResponse.ts](src/interface/http/sseResponse.ts) | Shared `ReadableStream`/encoder/abort-listener/close boilerplate for the SSE route |
 | [interface/http/errors.ts](src/interface/http/errors.ts) | Shared JSON error responder; `badRequest` carries the gate's `RateLimit-*` headers, since every caller of it sits past the gate and has already spent a token |
 | [interface/http/requestId.ts](src/interface/http/requestId.ts) | One id per request, carried in every error payload and its matching `console.error` line — the thing that makes a user-reported failure findable in logs |
 | [interface/http/clientIp.ts](src/interface/http/clientIp.ts) | Best-effort caller address from `x-forwarded-for`; returns `null` rather than a placeholder when there is none |
 | [interface/http/rateLimitSubject.ts](src/interface/http/rateLimitSubject.ts) | Which bucket a request counts against — session id, forwarded address, or the shared unidentified bucket |
-| [interface/http/rateLimitGate.ts](src/interface/http/rateLimitGate.ts) | The check both SSE routes run before any work: resolve the subject, consume its tier's limiter, answer 429 or hand back `RateLimit-*` headers |
+| [interface/http/rateLimitGate.ts](src/interface/http/rateLimitGate.ts) | The check the SSE route runs before any work: resolve the subject, consume its tier's limiter, answer 429 or hand back `RateLimit-*` headers |
 
 ### Application — search orchestration
 
@@ -543,7 +454,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 
 | Module | Role |
 |---|---|
-| [application/ports/*.ts](src/application/ports/) | `Geocoder`, `ClinicDirectory`, `WebsiteFetcher`, `JsonExtractionModel`, `FunctionCallingModel`, `CallProvider`, `CallSessionStore`, `ConfigProvider`, `SessionReader`, `Clock` — the seams infrastructure adapters implement |
+| [application/ports/*.ts](src/application/ports/) | `Geocoder`, `ClinicDirectory`, `WebsiteFetcher`, `JsonExtractionModel`, `FunctionCallingModel`, `ConfigProvider`, `SessionReader`, `Clock` — the seams infrastructure adapters implement |
 
 ### Domain — entities, policies, verification
 
@@ -553,7 +464,6 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [domain/entities/clinic.ts](src/domain/entities/clinic.ts) | `Clinic`, `RankedClinic`, `ClinicInspection`, `Evidence`, `clinicShortId` |
 | [domain/entities/agentRun.ts](src/domain/entities/agentRun.ts) | `AgentStep`, `AgentReasoning`, `AgentRunResult`, `ActionCase`, `InputFormData` |
 | [domain/entities/errors.ts](src/domain/entities/errors.ts) | `AgentError` |
-| [domain/entities/call.ts](src/domain/entities/call.ts) | Call-flow entities (see Agent-placed calls, above) |
 | [domain/policies/classifyClinic.ts](src/domain/policies/classifyClinic.ts) | Tiers a listing `walk_in` / `general` / `specialty` / `unknown` — downgrades only on positive evidence |
 | [domain/policies/calculateDistance.ts](src/domain/policies/calculateDistance.ts) | Great-circle distance, labelled straight-line rather than routing |
 | [domain/policies/rankClinics.ts](src/domain/policies/rankClinics.ts) | The waterfall above, plus the per-clinic rationale text |
@@ -561,7 +471,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [domain/policies/excludeSpecialtyListings.ts](src/domain/policies/excludeSpecialtyListings.ts) | `partitionBySpecialty` — the specialty-exclusion rule shared by the agent path and the deterministic pipeline |
 | [domain/policies/openingHours.ts](src/domain/policies/openingHours.ts) | Conservative OSM `opening_hours` parser — unsupported syntax returns `null`, never a guess |
 | [domain/services/draftAppointmentEmail.ts](src/domain/services/draftAppointmentEmail.ts) | Pure template function |
-| [domain/verification/quoteMatch.ts](src/domain/verification/quoteMatch.ts) | `findVerbatimMatch` — the primitive both fact-firewall lanes share |
+| [domain/verification/quoteMatch.ts](src/domain/verification/quoteMatch.ts) | `findVerbatimMatch` — the verbatim-quote primitive Lane A of the fact firewall relies on |
 | [domain/verification/pageEvidence.ts](src/domain/verification/pageEvidence.ts) | Quote verification against a fetched page, plus the separate gate on translated opening hours |
 
 ### Infrastructure — adapters
@@ -579,7 +489,7 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [infrastructure/cache/redisCache.ts](src/infrastructure/cache/redisCache.ts), [redisRestClient.ts](src/infrastructure/cache/redisRestClient.ts) | Redis-backed `Cache<T>` — same stale-read contract, holds across serverless instances; fails open on a transport error |
 | [infrastructure/cache/createCache.ts](src/infrastructure/cache/createCache.ts) | Picks Redis when `UPSTASH_REDIS_REST_URL`/`_TOKEN` are set, else the in-memory cache — used by both cache call sites below |
 | [infrastructure/config/env.ts](src/infrastructure/config/env.ts) | The one place `GEMINI_API_KEY`/`GEMINI_MODEL` are read from `process.env`; implements `ConfigProvider` |
-| [infrastructure/config/redisConfig.ts](src/infrastructure/config/redisConfig.ts) | The one place `UPSTASH_REDIS_REST_URL`/`_TOKEN` are read; used by `createCache.ts`, `createCallSessionStore.ts`, `createRateLimiter.ts`, and `/api/health` |
+| [infrastructure/config/redisConfig.ts](src/infrastructure/config/redisConfig.ts) | The one place `UPSTASH_REDIS_REST_URL`/`_TOKEN` are read; used by `createCache.ts`, `createRateLimiter.ts`, and `/api/health` |
 | [infrastructure/ratelimit/rateLimiter.ts](src/infrastructure/ratelimit/rateLimiter.ts) | `RateLimiter` — the shape both limiters below implement |
 | [infrastructure/ratelimit/fixedWindowRateLimiter.ts](src/infrastructure/ratelimit/fixedWindowRateLimiter.ts) | In-memory `RateLimiter`; single-process only — the same caveat as `TtlCache` |
 | [infrastructure/ratelimit/redisRateLimiter.ts](src/infrastructure/ratelimit/redisRateLimiter.ts) | Redis-backed `RateLimiter` — one INCR+EXPIRE counter shared across every serverless instance, which the in-memory version can't offer |
@@ -592,7 +502,6 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [infrastructure/fixtures/*.ts](src/infrastructure/fixtures/) | Canned stand-ins for all five upstreams — geocoder, clinic directory, website fetcher, and both Gemini clients |
 | [infrastructure/geo/createGeocoder.ts](src/infrastructure/geo/createGeocoder.ts), [createClinicDirectory.ts](src/infrastructure/geo/createClinicDirectory.ts), [web/createWebsiteFetcher.ts](src/infrastructure/web/createWebsiteFetcher.ts), [llm/createJsonExtractionModel.ts](src/infrastructure/llm/createJsonExtractionModel.ts), [llm/createFunctionCallingModel.ts](src/infrastructure/llm/createFunctionCallingModel.ts) | Fixture-or-live selection, one per port — the same shape as `createCache.ts` |
 | [infrastructure/logging/logger.ts](src/infrastructure/logging/logger.ts) | Shared pino logger — JSON in production, pretty-printed in dev; every prior `console.error` now logs structured fields (e.g. the request id) instead of interpolating them into a string |
-| [infrastructure/call/mockCallProvider.ts](src/infrastructure/call/mockCallProvider.ts) | Call subsystem provider adapter (see Agent-placed calls, above) |
 
 ## External services
 
@@ -623,11 +532,6 @@ than merely incorrect:
 - `openingHours.test.ts` — almost entirely about the parser refusing to guess
 - `pageEvidence.test.ts` — fabricated and paraphrased quotes dropping their fields
 - `classifyClinic.test.ts` — specialty names beating walk-in names
-- `transcriptEvidence.test.ts` — the call firewall, including a quote lifted from the agent's own turn
-- `callScript.test.ts` — disclosure first, and no slot able to carry patient detail
-- `callSessionService.test.ts` — lifecycle transitions, hang-up at every live stage, one call per clinic
-- `mockCallProvider.test.ts` — each persona's terminal status, and the vague clinic confirming nothing
-- `redisCallSessionStore.test.ts` — the SET-NX claim, and a terminal status releasing it for the next call, against a fake transport
 - `redisCache.test.ts` — the stale-read contract and failing open on a transport error, against a fake transport
 - `excludeSpecialtyListings.test.ts` — the agent path and the deterministic pipeline agreeing on the same duplicate-chain input
 - `redisRateLimiter.test.ts` — the INCR+EXPIRE window, and falling back to the full window when a TTL is unexpectedly missing, against a fake transport
@@ -642,17 +546,14 @@ npm test
 
 `e2e/*.spec.ts`, run with Playwright, cover what `node --test` structurally
 can't reach: the actual browser wiring — the SSE stream driving `app/page.tsx`'s
-phase state machine, and the call-consent modal. Every test mocks
-`/api/search` and `/api/call` at the network layer (`page.route`) rather than
-hitting Nominatim/Overpass/Gemini for real, for the same no-network reason the
-unit suite takes `callModel`/`runTool` as parameters.
+phase state machine. Every test mocks `/api/search` at the network layer
+(`page.route`) rather than hitting Nominatim/Overpass/Gemini for real, for
+the same no-network reason the unit suite takes `callModel`/`runTool` as
+parameters.
 
 - `search.spec.ts` — steps streaming into a recommendation with a working
   action button; the location-not-found and rate-limited error phases,
   including the request-id reference shown for each
-- `call.spec.ts` — the consent modal rendering the actual script from
-  `buildScript()` and being cancellable; a full call streaming a transcript
-  through to a rendered outcome
 
 ```bash
 npm run test:e2e

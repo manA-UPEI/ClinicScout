@@ -22,10 +22,10 @@ interface GeminiJsonResponse {
 
 /**
  * The single-shot structured-JSON extraction adapter used for website
- * inspection and call-finding extraction. Website inspection is an
- * enrichment pass — if the model is unreachable the run continues with
- * fields left unknown, which is the honest outcome rather than a blocked
- * search, so `generateJson` returns null on any failure rather than throwing.
+ * inspection. It is an enrichment pass — if the model is unreachable the run
+ * continues with fields left unknown, which is the honest outcome rather
+ * than a blocked search, so `generateJson` returns null on any failure
+ * rather than throwing.
  */
 export function createGeminiJsonClient(
   config: ConfigProvider = createEnvConfigProvider()

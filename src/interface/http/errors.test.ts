@@ -16,8 +16,8 @@ test("a rejected body still reports the allowance it just spent", () => {
   assert.equal(response.headers.get("RateLimit-Remaining"), "3");
 });
 
-test("the 409 conflict path carries them too", () => {
-  const response = badRequest("already_active", "Call in progress.", 409, "req-2", GATE_HEADERS);
+test("a non-400 status still carries them", () => {
+  const response = badRequest("conflict", "Already in progress.", 409, "req-2", GATE_HEADERS);
 
   assert.equal(response.status, 409);
   assert.equal(response.headers.get("RateLimit-Remaining"), "3");

@@ -4,19 +4,14 @@ export interface RedisRestConfig {
 }
 
 /**
- * The Redis commands RedisCache, RedisCallSessionStore, and RedisRateLimiter
- * need. GET/SET cover the cache; SETNX and DEL are what let the call-session
- * store claim a clinic atomically and release the claim when a call ends;
- * INCR/EXPIRE/TTL are what let the rate limiter keep one shared count across
- * every serverless instance instead of one count per instance, and EVAL is
- * what lets it do so atomically.
+ * The Redis commands RedisCache and RedisRateLimiter need. GET/SET cover the
+ * cache; INCR/EXPIRE/TTL are what let the rate limiter keep one shared count
+ * across every serverless instance instead of one count per instance, and
+ * EVAL is what lets it do so atomically.
  */
 export interface RedisTransport {
   get(key: string): Promise<string | null>;
   set(key: string, value: string, exSeconds: number): Promise<void>;
-  /** Sets only if the key doesn't already exist. Returns whether the set happened — the atomic primitive an exclusive claim needs instead of a separate check-then-act that could race. */
-  setnx(key: string, value: string, exSeconds: number): Promise<boolean>;
-  del(key: string): Promise<void>;
   /** Atomically increments (creating the key at 1 if it didn't exist) and returns the new count. */
   incr(key: string): Promise<number>;
   expire(key: string, exSeconds: number): Promise<void>;
@@ -74,15 +69,6 @@ export function createRedisRestTransport(config: RedisRestConfig): RedisTranspor
     },
     async set(key, value, exSeconds) {
       await runCommand(config, ["SET", key, value, "EX", exSeconds]);
-    },
-    async setnx(key, value, exSeconds) {
-      // Redis returns "OK" when the SET happened, null when NX blocked it
-      // because the key already existed.
-      const result = await runCommand(config, ["SET", key, value, "NX", "EX", exSeconds]);
-      return result === "OK";
-    },
-    async del(key) {
-      await runCommand(config, ["DEL", key]);
     },
     async incr(key) {
       const result = await runCommand(config, ["INCR", key]);

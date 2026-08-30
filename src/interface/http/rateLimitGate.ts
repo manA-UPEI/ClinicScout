@@ -62,7 +62,6 @@ function headersFor(result: RateLimitResult, rejected: boolean): Record<string, 
 
 const EXHAUSTED: Record<RateLimitedRoute, string> = {
   search: "You've made a lot of searches in a short time.",
-  call: "You've placed a lot of calls in a short time.",
 };
 
 /**
@@ -81,13 +80,10 @@ const AT_CAPACITY: Record<RateLimitedRoute, string> = {
   search:
     "ClinicScout is handling as many searches as it can right now. This isn't " +
     "you — please try again in a few minutes.",
-  call:
-    "ClinicScout is handling as many calls as it can right now. This isn't " +
-    "you — please try again in a few minutes.",
 };
 
 /**
- * The rate-limit check both SSE routes run before doing any work.
+ * The rate-limit check the search SSE route runs before doing any work.
  *
  * Two checks, and the order is the whole design.
  *

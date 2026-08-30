@@ -52,11 +52,6 @@ test("a search streams progress, then renders a recommendation with a working ac
     "href",
     "tel:+1-647-498-1421"
   );
-
-  // the call-consent flow is offered alongside the primary action
-  await expect(
-    page.getByRole("button", { name: "📞 Have the agent call and ask about walk-ins" })
-  ).toBeVisible();
 });
 
 test("an agent-run failure renders the error phase with a request reference", async ({

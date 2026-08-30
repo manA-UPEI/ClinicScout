@@ -26,12 +26,11 @@ export interface PostAndStreamOptions {
 /**
  * POSTs JSON to `url` and streams back SSE events one frame at a time.
  *
- * Framework-agnostic on purpose: app/page.tsx's search flow and
- * CallPanel.tsx's call flow want different local phase/state shapes, so
- * forcing one React hook with one state shape onto both would distort one of
- * the two call sites. This function is the shared piece — the fetch +
- * content-type check + SSE read loop — that both `components/hooks/
- * useStreamedSse.ts` and any future caller wrap with their own state.
+ * Framework-agnostic on purpose: this function is the shared piece — the
+ * fetch + content-type check + SSE read loop — that `components/hooks/
+ * useStreamedSse.ts` and any future caller wrap with their own local
+ * phase/state shape, rather than forcing one React hook's state shape onto
+ * every caller.
  */
 export async function postAndStream(
   url: string,

@@ -2,9 +2,9 @@ export type Send = (event: string, data: unknown) => void;
 
 /**
  * Wraps a streaming handler in a Server-Sent-Events Response, owning the
- * ReadableStream/encoder/abort-listener/close boilerplate both /api/search
- * and /api/call otherwise repeat. `run` receives a `send(event, data)`
- * function and the request's abort signal; whatever it does is streamed to
+ * ReadableStream/encoder/abort-listener/close boilerplate /api/search would
+ * otherwise repeat. `run` receives a `send(event, data)` function and the
+ * request's abort signal; whatever it does is streamed to
  * the client until it resolves, at which point the stream closes.
  *
  * If the client disconnects mid-run (navigates away, hangs up), further

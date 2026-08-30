@@ -2,12 +2,11 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * Covers what node --test structurally can't: the actual browser wiring —
- * the SSE stream driving the phase state machine in app/page.tsx, and the
- * call-consent modal. Every test mocks /api/search and /api/call at the
- * network layer (page.route) rather than hitting Nominatim/Overpass/Gemini
- * for real, for the same reason the unit suite takes callModel/runTool as
- * parameters: no network, no quota burned, no flakiness from a live agent
- * run's timing.
+ * the SSE stream driving the phase state machine in app/page.tsx. Every test
+ * mocks /api/search at the network layer (page.route) rather than hitting
+ * Nominatim/Overpass/Gemini for real, for the same reason the unit suite
+ * takes callModel/runTool as parameters: no network, no quota burned, no
+ * flakiness from a live agent run's timing.
  */
 export default defineConfig({
   testDir: "./e2e",

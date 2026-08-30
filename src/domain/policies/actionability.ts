@@ -27,16 +27,3 @@ export function isLocatable(c: Clinic): boolean {
 export function isDeadEnd(c: Clinic): boolean {
   return !hasContactChannel(c) && !isLocatable(c);
 }
-
-/**
- * Whether the agent can offer to phone this clinic and ask about walk-in
- * availability on the user's behalf.
- *
- * A phone number is the whole requirement — the call asks questions and
- * commits to nothing, so no other field has to be known first. Kept here
- * beside the other reachability predicates so "we can contact this clinic"
- * keeps meaning one thing in one place.
- */
-export function canAgentCall(c: Clinic): boolean {
-  return Boolean(c.phone);
-}

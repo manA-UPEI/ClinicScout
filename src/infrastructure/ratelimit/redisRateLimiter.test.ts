@@ -23,13 +23,6 @@ function fakeTransport(): FakeTransport {
       return null;
     },
     async set() {},
-    async setnx() {
-      return true;
-    },
-    async del(key) {
-      counts.delete(key);
-      ttls.delete(key);
-    },
     async incr(key) {
       const next = (counts.get(key) ?? 0) + 1;
       counts.set(key, next);
