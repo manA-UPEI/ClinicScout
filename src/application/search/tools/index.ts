@@ -5,7 +5,6 @@ import type { RunState } from "../agentState.ts";
 import { geocodeTool } from "./geocodeTool.ts";
 import { searchTool } from "./searchTool.ts";
 import { inspectTool } from "./inspectTool.ts";
-import { rankTool } from "./rankTool.ts";
 import { detailsTool } from "./detailsTool.ts";
 import { finalizeTool } from "./finalizeTool.ts";
 import { fail } from "./shared.ts";
@@ -17,7 +16,6 @@ export const AGENT_TOOLS: AgentTool[] = [
   geocodeTool,
   searchTool,
   inspectTool,
-  rankTool,
   detailsTool,
   finalizeTool,
 ];

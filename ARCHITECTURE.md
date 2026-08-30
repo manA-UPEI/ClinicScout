@@ -446,9 +446,9 @@ is never a reason to prefer a clinic; it is the absence of one.
 | [application/search/runGeminiAgentUseCase.ts](src/application/search/runGeminiAgentUseCase.ts) | The turn loop: system instruction, budget, turn cap, one nudge to finalize, salvage on early exit |
 | [application/search/agentState.ts](src/application/search/agentState.ts) | `RunState` blackboard and the projection boundary |
 | [application/search/citationGuard.ts](src/application/search/citationGuard.ts) | `validateFinalization()` — the citation check and the usability floor |
-| [application/search/inspectClinicUseCase.ts](src/application/search/inspectClinicUseCase.ts) | Runs one website's extraction, verification, caching and merge back into the record |
+| [application/search/inspectClinicUseCase.ts](src/application/search/inspectClinicUseCase.ts) | `inspect_clinics_batch()` — extraction, verification, caching and merge back into the record; 3+ clinics share one combined Gemini call, fewer run parallel (measured faster below that count) |
 | [application/search/tools/index.ts](src/application/search/tools/index.ts) | `AGENT_TOOLS`, `TOOL_DECLARATIONS`, `executeTool` |
-| [application/search/tools/*.ts](src/application/search/tools/) | One file per tool (`geocodeTool`, `searchTool`, `inspectTool`, `rankTool`, `detailsTool`, `finalizeTool`), plus `shared.ts` (common types/helpers) and `stepMessages.ts` (the two step-log formatters complex enough to be worth naming) |
+| [application/search/tools/*.ts](src/application/search/tools/) | One file per tool (`geocodeTool`, `searchTool`, `inspectTool`, `detailsTool`, `finalizeTool`), plus `shared.ts` (common types/helpers, including `buildClinicDetail` shared by `inspectTool` and `detailsTool`) and `stepMessages.ts` (the two step-log formatters complex enough to be worth naming) |
 
 ### Application — ports
 

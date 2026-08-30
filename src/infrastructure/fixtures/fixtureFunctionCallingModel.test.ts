@@ -44,7 +44,7 @@ test("opens by geocoding the location it was given", async () => {
   );
 });
 
-test("walks geocode -> search -> rank -> inspect -> details -> finalize", async () => {
+test("walks geocode -> search (already ranked) -> inspect (already detailed) -> finalize", async () => {
   let contents = [OPENING];
   const order: (string | null)[] = [];
 
@@ -55,16 +55,13 @@ test("walks geocode -> search -> rank -> inspect -> details -> finalize", async 
         { id: "node/1", has_website: true },
         { id: "node/2", has_website: false },
       ],
-    },
-    rank_clinics: {
       ranked: [
         { id: "node/1", name: "First Clinic", rank: 1 },
         { id: "node/2", name: "Second Clinic", rank: 2 },
       ],
     },
-    inspect_clinic_websites: { inspected: ["node/1"] },
-    get_clinic_details: {
-      details: [
+    inspect_clinic_websites: {
+      results: [
         {
           id: "node/1",
           accepts_walk_ins: true,
@@ -73,10 +70,14 @@ test("walks geocode -> search -> rank -> inspect -> details -> finalize", async 
           current_capacity: null,
         },
       ],
+      ranked: [
+        { id: "node/1", name: "First Clinic", rank: 1 },
+        { id: "node/2", name: "Second Clinic", rank: 2 },
+      ],
     },
   };
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 3; i++) {
     const turn = await callable(contents);
     const name = calledTool(turn);
     order.push(name);
@@ -86,17 +87,16 @@ test("walks geocode -> search -> rank -> inspect -> details -> finalize", async 
   assert.deepEqual(order, [
     "geocode_location",
     "search_clinics",
-    "rank_clinics",
     "inspect_clinic_websites",
-    "get_clinic_details",
   ]);
 
   const final = await callable(contents);
   assert.equal(calledTool(final), "finalize_recommendation");
   const args = final.kind === "calls" ? final.calls[0].args : {};
   assert.equal(args.clinic_id, "node/1");
-  // Only the fields the details response actually confirmed — citing a null
-  // one is exactly what the citation guard rejects.
+  // Only the fields the inspect response actually confirmed — citing a null
+  // one is exactly what the citation guard rejects. No get_clinic_details
+  // call needed: the inspected clinic's details already came back above.
   assert.deepEqual(args.cited_fields, ["accepts_walk_ins", "opening_hours"]);
 });
 
@@ -108,8 +108,6 @@ test("only inspects clinics that have a website to read", async () => {
       { id: "node/1", has_website: false },
       { id: "node/2", has_website: true },
     ],
-  });
-  contents = withResult(contents, "rank_clinics", {
     ranked: [
       { id: "node/1", name: "No Site" },
       { id: "node/2", name: "Has Site" },
@@ -130,8 +128,6 @@ test("skips inspection entirely when nothing has a website", async () => {
   contents = withResult(contents, "geocode_location", {});
   contents = withResult(contents, "search_clinics", {
     clinics: [{ id: "node/1", has_website: false }],
-  });
-  contents = withResult(contents, "rank_clinics", {
     ranked: [{ id: "node/1", name: "No Site" }],
   });
 
@@ -141,8 +137,7 @@ test("skips inspection entirely when nothing has a website", async () => {
 test("answers in prose rather than finalizing when the ranking is empty", async () => {
   let contents = [OPENING];
   contents = withResult(contents, "geocode_location", {});
-  contents = withResult(contents, "search_clinics", { clinics: [] });
-  contents = withResult(contents, "rank_clinics", { ranked: [] });
+  contents = withResult(contents, "search_clinics", { clinics: [], ranked: [] });
 
   const turn = await callable(contents);
 

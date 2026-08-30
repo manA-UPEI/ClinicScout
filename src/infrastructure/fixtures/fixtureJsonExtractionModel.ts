@@ -2,9 +2,24 @@ import type { ClinicInspection, Evidence } from "../../domain/entities/clinic.ts
 import { EMPTY_INSPECTION } from "../../domain/verification/pageEvidence.ts";
 import { seedByName } from "./fixtureData.ts";
 
-/** The prompt's "Clinic name: X" line is how the extraction identifies its subject. */
-function clinicNameFrom(prompt: string): string | null {
-  return prompt.match(/^Clinic name: (.+)$/m)?.[1]?.trim() ?? null;
+interface ClinicBlock {
+  name: string;
+  website: string;
+}
+
+/**
+ * The real prompt (inspectClinicUseCase.ts's buildBatchPrompt) labels every
+ * clinic with a "Clinic name:" / "Clinic website:" pair, one per
+ * "=== CLINIC N ===" block, in that order — matching them up by position is
+ * exactly what the real model is asked to do, just without an LLM in the
+ * loop.
+ */
+function clinicBlocksFrom(prompt: string): ClinicBlock[] {
+  const names = [...prompt.matchAll(/^Clinic name: (.+)$/gm)].map((m) => m[1].trim());
+  const websites = [...prompt.matchAll(/^Clinic website: (.+)$/gm)].map((m) => m[1].trim());
+  return names
+    .map((name, i) => ({ name, website: websites[i] }))
+    .filter((b): b is ClinicBlock => Boolean(b.website));
 }
 
 interface RawInspection extends Partial<ClinicInspection> {
@@ -79,11 +94,10 @@ const INSPECTIONS: Record<string, RawInspection> = {
   },
 };
 
-function inspectionFor(prompt: string): RawInspection {
-  const name = clinicNameFrom(prompt);
-  const seed = name ? seedByName(name) : undefined;
-  if (!name || !seed) return { ...EMPTY_INSPECTION };
-  return INSPECTIONS[name] ?? { ...EMPTY_INSPECTION };
+function inspectionFor(block: ClinicBlock): RawInspection & { website: string } {
+  const seed = seedByName(block.name);
+  const base = seed ? INSPECTIONS[block.name] : undefined;
+  return { ...(base ?? EMPTY_INSPECTION), website: block.website };
 }
 
 /** Always "configured": a fixture run must never take the no-API-key fallback path. */
@@ -91,6 +105,12 @@ export function fixtureGeminiConfigured(): boolean {
   return true;
 }
 
+/**
+ * Mirrors the real batch contract: one prompt can carry several clinics, and
+ * the response is `{ clinics: [...] }` matched back by `website` — same
+ * shape inspectClinicUseCase.ts's extractRawBatch expects from a real model.
+ */
 export async function fixtureGenerateJson<T>(prompt: string): Promise<T | null> {
-  return inspectionFor(prompt) as T;
+  const clinics = clinicBlocksFrom(prompt).map(inspectionFor);
+  return { clinics } as T;
 }

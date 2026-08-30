@@ -2,7 +2,8 @@ import { search_clinics } from "../../infrastructure/geo/createClinicDirectory.t
 import { rank_clinics } from "../../domain/policies/rankClinics.ts";
 import { partitionBySpecialty } from "../../domain/policies/excludeSpecialtyListings.ts";
 import { geocode } from "../../infrastructure/geo/createGeocoder.ts";
-import { inspect_clinic, mergeInspection } from "./inspectClinicUseCase.ts";
+import { inspect_clinics_batch, mergeInspection } from "./inspectClinicUseCase.ts";
+import { EMPTY_INSPECTION } from "../../domain/verification/pageEvidence.ts";
 import { geminiConfigured } from "../../infrastructure/llm/createJsonExtractionModel.ts";
 import { AgentError } from "../../domain/entities/errors.ts";
 import type { AgentRunResult, AgentStep, InputFormData, Urgency } from "../../domain/entities/agentRun.ts";
@@ -63,12 +64,12 @@ async function inspectCandidates(
     message: `🕵️ Reading ${candidates.length} clinic ${candidates.length === 1 ? "website" : "websites"} for walk-in and booking details...`,
   });
 
-  const inspections = await Promise.all(candidates.map(inspect_clinic));
+  const inspectionsByWebsite = await inspect_clinics_batch(candidates);
 
   // Logged after the fact, in candidate order: pushing from inside the parallel
   // map would order the transparency log by whichever site responded first.
-  const inspected = candidates.map((clinic, i) => {
-    const inspection = inspections[i];
+  const inspected = candidates.map((clinic) => {
+    const inspection = inspectionsByWebsite.get(clinic.website!) ?? EMPTY_INSPECTION;
     emit({
       id: `inspect-${clinic.source_url}`,
       message:

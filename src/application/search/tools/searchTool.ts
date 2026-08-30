@@ -1,5 +1,6 @@
 import { search_clinics } from "../../../infrastructure/geo/createClinicDirectory.ts";
-import { eligibleClinics, project, recordSearch } from "../agentState.ts";
+import { rank_clinics } from "../../../domain/policies/rankClinics.ts";
+import { eligibleClinics, project, recordSearch, shortId } from "../agentState.ts";
 import { fail } from "./shared.ts";
 import type { AgentTool } from "./shared.ts";
 import { formatSearchStep } from "./stepMessages.ts";
@@ -29,7 +30,9 @@ export const searchTool: AgentTool = {
       "Specialty listings (eye care, fertility, physiotherapy and the like) are " +
       "filtered out automatically and reported as a count. You may call this again " +
       "with a larger radius if the result set is too thin to give a good answer; " +
-      "results accumulate across calls and already-inspected clinics keep their findings.",
+      "results accumulate across calls and already-inspected clinics keep their findings. " +
+      "The response already includes the current ranking, so there is no separate " +
+      "ranking tool to call.",
     parameters: {
       type: "OBJECT",
       properties: {
@@ -61,6 +64,13 @@ export const searchTool: AgentTool = {
     recordSearch(state, clinics, radiusKm, stale);
     const eligible = eligibleClinics(state);
 
+    const ranked = rank_clinics(eligible, state.input.urgency).map((c) => ({
+      id: shortId(c.source_url),
+      name: c.clinic_name,
+      rank: c.rank,
+      rationale: c.rationale,
+    }));
+
     return {
       response: {
         searched_radius_km: radiusKm,
@@ -71,6 +81,10 @@ export const searchTool: AgentTool = {
         excluded_specialty_count: state.excluded.length,
         served_from_stale_cache: stale,
         clinics: eligible.map((c) => project(state, c)),
+        // The app's own deterministic waterfall, already applied — no need to
+        // call rank_clinics separately unless something material has changed
+        // since (a wider search, a fresh inspection).
+        ranked,
       },
       step: formatSearchStep({
         radiusKm,

@@ -41,12 +41,15 @@ export function formatSearchStep(input: {
 export function formatInspectStep(
   ids: string[],
   targetCount: number,
-  results: { name: string; verified_fields: string[] }[]
+  results: { name: string; page_verified_evidence: { field: string }[] }[]
 ): AgentStep {
-  const confirmed = results.filter((r) => r.verified_fields.length > 0);
+  const confirmed = results.filter((r) => r.page_verified_evidence.length > 0);
   const detail = confirmed.length
     ? confirmed
-        .map((r) => `${r.name}: ${r.verified_fields.map((f) => f.replace(/_/g, " ")).join(", ")}`)
+        .map(
+          (r) =>
+            `${r.name}: ${r.page_verified_evidence.map((e) => e.field.replace(/_/g, " ")).join(", ")}`
+        )
         .join("; ")
     : "nothing verifiable on those sites — details stay Unknown";
 
