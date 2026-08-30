@@ -83,6 +83,13 @@ const AT_CAPACITY: Record<RateLimitedRoute, string> = {
 };
 
 /**
+ * How long to tell a caller to wait when the limiter itself couldn't be
+ * reached, rather than when a real window told us. Short, because the
+ * failure this covers (a Redis blip) is normally seconds, not minutes.
+ */
+const RATE_LIMITER_UNAVAILABLE_RETRY_MS = 5_000;
+
+/**
  * The rate-limit check the search SSE route runs before doing any work.
  *
  * Two checks, and the order is the whole design.
@@ -119,30 +126,55 @@ export async function enforceRateLimit(
   const user = await getCurrentUser();
   const subject = resolveSubject(user, clientIp(request));
 
-  const personal = await limiterFor(
-    `${route}:${subject.kind}`,
-    tierFor(route, subject.kind)
-  ).consume(subject.key);
+  let personal: RateLimitResult;
+  let global: RateLimitResult;
+  try {
+    personal = await limiterFor(
+      `${route}:${subject.kind}`,
+      tierFor(route, subject.kind)
+    ).consume(subject.key);
 
-  if (!personal.allowed) {
-    logger.warn(
-      { requestId, route, subjectKind: subject.kind, limit: personal.limit },
-      "Rate limit exceeded"
+    if (!personal.allowed) {
+      logger.warn(
+        { requestId, route, subjectKind: subject.kind, limit: personal.limit },
+        "Rate limit exceeded"
+      );
+      return {
+        allowed: false,
+        response: tooManyRequests(
+          message(route, subject),
+          personal.retryAfterMs,
+          requestId,
+          headersFor(personal, true)
+        ),
+      };
+    }
+
+    global = await limiterFor(`${route}:global`, globalTierFor(route)).consume(
+      GLOBAL_KEY
     );
+  } catch (e) {
+    // The limiter's transport failed (Redis unreachable, timed out, or
+    // returned something unparseable) — this caller's allowance simply
+    // cannot be measured. Letting the request through unmetered would remove
+    // the one thing standing between a Redis blip and the free-tier quota
+    // being burned in seconds; letting the exception propagate would crash
+    // the route with a bare 500 that carries none of this app's error shape
+    // (no requestId, no RateLimit-*, not even JSON). Failing closed the same
+    // way a genuine capacity rejection does is the only option that is both
+    // safe and honest — and it costs the caller nothing they wouldn't have
+    // paid anyway, since the personal check above hadn't yet let them
+    // through when this can happen.
+    logger.error({ requestId, route, err: e }, "Rate limiter unavailable — rejecting request");
     return {
       allowed: false,
-      response: tooManyRequests(
-        message(route, subject),
-        personal.retryAfterMs,
-        requestId,
-        headersFor(personal, true)
+      response: serviceAtCapacity(
+        AT_CAPACITY[route],
+        RATE_LIMITER_UNAVAILABLE_RETRY_MS,
+        requestId
       ),
     };
   }
-
-  const global = await limiterFor(`${route}:global`, globalTierFor(route)).consume(
-    GLOBAL_KEY
-  );
 
   if (!global.allowed) {
     // Logged at error, not warn: a caller hitting their own limit is the
