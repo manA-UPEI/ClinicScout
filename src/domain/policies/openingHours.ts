@@ -75,6 +75,13 @@ function parseRule(rawRule: string): Rule | null {
     const startMinutes = parseClock(m[1]);
     const endMinutes = parseClock(m[2]);
     if (startMinutes === null || endMinutes === null) return null;
+    // A span that crosses midnight (e.g. "22:00-02:00") needs a day-boundary
+    // model this parser doesn't have — isOpenNow only ever checks minutesNow
+    // against a single day's rules, so start > end can never match at any
+    // hour and would silently report "closed" for a clinic that is actually
+    // open. Refusing it here, the same way PH/SH/month syntax is refused
+    // above, keeps that failure an honest null instead of a wrong verdict.
+    if (endMinutes <= startMinutes) return null;
     spans.push({ startMinutes, endMinutes });
   }
 
