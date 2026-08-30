@@ -3,6 +3,13 @@ updates:
   # npm dependencies — weekly, grouped so a routine update is one PR to
   # review rather than a dozen, with the CI job's own `npm audit` step
   # gating anything that doesn't actually resolve.
+  #
+  # Only minor/patch bumps are grouped. A major bump (TypeScript 5->7 was
+  # the one that actually happened) can break something the rest of the
+  # group didn't touch — typescript-eslint hadn't caught up to TS 7 yet —
+  # and bundling it in blocked three genuinely safe patches from merging
+  # until someone untangled the group by hand. Majors now land as their
+  # own PR each, so one incompatible bump can't hold up the others.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
@@ -11,6 +18,9 @@ updates:
       dependencies:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   # The workflow files themselves — actions/checkout, actions/setup-node,
   # etc. — age the same way any other dependency does.
