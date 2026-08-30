@@ -1,15 +1,11 @@
 /**
- * The one primitive both fact-firewalls (website claims and call-transcript
- * claims) share: normalize a string for comparison, then check whether a
- * quote appears verbatim in one of a list of candidate sources.
+ * The primitive the website-claim fact-firewall uses: normalize a string for
+ * comparison, then check whether a quote appears verbatim in one of a list
+ * of candidate sources.
  *
  * This module has no opinion about what a "source" is — a whole page's text,
- * or a single transcript turn — that choice, and any pre-filtering of which
- * sources are even eligible (e.g. clinic-only turns), belongs to the caller.
- * Keeping that decision out of here is deliberate: it is what lets
- * domain/verification/transcriptEvidence.ts enforce its clinic-turns-only
- * rule by construction, simply by never including agent turns in the list it
- * passes in, rather than this module needing to know that rule exists.
+ * or something narrower — that choice, and any pre-filtering of which
+ * sources are even eligible, belongs to the caller.
  */
 
 /** Shorter than this matches incidentally and proves nothing. */

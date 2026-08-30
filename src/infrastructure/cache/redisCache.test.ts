@@ -14,14 +14,6 @@ function fakeTransport(): RedisTransport & { store: Map<string, string> } {
     async set(key, value) {
       store.set(key, value);
     },
-    async setnx(key, value) {
-      if (store.has(key)) return false;
-      store.set(key, value);
-      return true;
-    },
-    async del(key) {
-      store.delete(key);
-    },
     // RedisCache never calls these — stubbed only to satisfy RedisTransport.
     async incr() {
       return 1;
@@ -83,12 +75,6 @@ test("get() fails open to undefined when the transport throws", async () => {
       throw new Error("network down");
     },
     set: async () => {
-      throw new Error("network down");
-    },
-    setnx: async () => {
-      throw new Error("network down");
-    },
-    del: async () => {
       throw new Error("network down");
     },
     incr: async () => {

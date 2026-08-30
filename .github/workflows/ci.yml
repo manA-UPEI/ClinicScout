@@ -55,7 +55,7 @@ jobs:
 
       - run: npm ci
 
-      # Every e2e test mocks /api/search and /api/call at the network layer
+      # Every e2e test mocks /api/search at the network layer
       # (playwright.config.ts), so no GEMINI_API_KEY or other secret is
       # needed here — nothing in this job calls a real upstream service.
       - name: Install Playwright's browser

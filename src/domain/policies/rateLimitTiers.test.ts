@@ -8,7 +8,7 @@ import {
   type SubjectKind,
 } from "./rateLimitTiers.ts";
 
-const ROUTES: RateLimitedRoute[] = ["search", "call"];
+const ROUTES: RateLimitedRoute[] = ["search"];
 const KINDS: SubjectKind[] = ["user", "ip", "unidentified"];
 
 test("every route/kind pair has a positive limit and window", () => {
@@ -32,12 +32,11 @@ test("signing in never lowers a caller's ceiling", () => {
   }
 });
 
-// The anonymous tiers are what both routes enforced before accounts existed.
+// The anonymous tier is what the route enforced before accounts existed.
 // Introducing accounts must not quietly take quota away from visitors who
 // did nothing but keep using the app the way they always did.
 test("anonymous callers keep the pre-accounts allowance", () => {
   assert.equal(tierFor("search", "ip").limit, 5);
-  assert.equal(tierFor("call", "ip").limit, 8);
 });
 
 test("an unidentified caller is limited exactly as a known address is", () => {

@@ -1,11 +1,25 @@
-/** Shared shape for a non-stream JSON error response, used by both route handlers before their SSE body opens. */
+/**
+ * Shared shape for a non-stream JSON error response, used by both route
+ * handlers before their SSE body opens.
+ *
+ * Carries the gate's RateLimit-* headers because every caller of this sits
+ * *past* the rate-limit check: the gate runs before body parsing, so a
+ * request rejected here has already spent one of the caller's tokens.
+ * Omitting the headers left a client that sends a malformed body burning its
+ * allowance with no way to see what was left — the one response class where
+ * the count moved but nothing said so.
+ */
 export function badRequest(
   kind: string,
   message: string,
   status: number,
-  requestId?: string
+  requestId?: string,
+  rateLimitHeaders: Record<string, string> = {}
 ): Response {
-  return Response.json({ error: { kind, message, requestId } }, { status });
+  return Response.json(
+    { error: { kind, message, requestId } },
+    { status, headers: rateLimitHeaders }
+  );
 }
 
 /** Same shape as badRequest, plus the Retry-After header the 429 status implies and whatever RateLimit-* headers the gate measured. */

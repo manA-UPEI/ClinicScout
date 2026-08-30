@@ -120,68 +120,6 @@ The selector changes behaviour rather than decorating the form:
 - **Emergency-adjacent** — ranks as urgent, and the results open with a banner
   telling the user to call 911 rather than travel to a clinic.
 
-## Having the agent call the clinic
-
-The one fact that decides whether a trip is worth making — *are you taking
-walk-ins right now, and how long is the wait* — exists nowhere but in a
-receptionist's head. It is not in OpenStreetMap and it is almost never on the
-website. So the agent can phone and ask.
-
-It **asks and hangs up**. There is no code path by which a call books anything,
-which is why a hallucinated appointment is impossible here rather than merely
-discouraged. What it learns comes back as findings you can act on yourself.
-
-### The transcript is the new page text
-
-Website facts survive only if a verbatim quote backs them. Call facts work the
-same way — with one addition that a document does not need:
-
-> The quote must come from a turn the **clinic** spoke. The agent cannot cite
-> itself.
-
-Half a transcript is the agent's own words. An agent that asks *"so that's about
-forty-five minutes?"* and gets a noncommittal "mhm" could, given the whole
-transcript, quote its own sentence as proof of a forty-five minute wait — a
-number the clinic never said and merely failed to argue with. Building the
-haystack from clinic turns only makes that impossible in code
-([domain/verification/transcriptEvidence.ts](src/domain/verification/transcriptEvidence.ts)).
-
-The visible result: a receptionist who says *"maybe, hard to say"* produces a
-call that confirms **nothing**, and the UI says so. A system that returns "about
-45 minutes" there invented it.
-
-### It says what it is, and says nothing about you
-
-Every call opens with a constant, non-skippable line stating that the caller is
-an AI and the call is transcribed. It is not model-generated and it is always
-first ([domain/services/callScript.ts](src/domain/services/callScript.ts)).
-
-The script has exactly one slot — the clinic's name. There is no slot capable of
-carrying a symptom, a name, or a callback number, so **the clinic learns nothing
-about you**; `Urgency` shapes the ranking and never reaches the conversation.
-That is enforced by the shape of the script rather than by asking a model to
-behave, and `buildScript.length === 1` is asserted in the suite so a later change
-that threads patient detail through fails before it ships.
-
-The agent also withdraws rather than pressing on: a receptionist who says they
-don't take automated calls gets an apology and a hang-up, and a phone tree gets
-hung up on rather than read at.
-
-### Simulated, for now
-
-Calls run against a scripted receptionist — no telephony, no cost, nothing
-dialled — the same honesty the email draft practises by labelling itself
-"(Mock)". Seven personas cover the failure modes a real line actually produces:
-helpful, appointment-only, **vague**, refuses-AI, voicemail, phone tree, and no
-answer.
-
-Everything above the provider boundary is real, so wiring live telephony is an
-adapter (`CallProvider` in
-[application/ports/callProvider.ts](src/application/ports/callProvider.ts)), not a rewrite. Doing
-so needs more than code: a verified caller ID, a number allowlist, per-call rate
-limits, and a look at the rules on AI-voice calls in the jurisdiction you are
-dialling into. It is deliberately not wired up.
-
 ## Surviving a busy Overpass
 
 The public Overpass instance rate-limits and occasionally 5xx's under load —
@@ -273,11 +211,11 @@ openssl rand -base64 32   # AUTH_SECRET
 Rotating `AUTH_SECRET` invalidates every session at once, which is the
 intended emergency lever.
 
-Signing in raises your rate limits: 20 searches and 20 calls per ten minutes,
-against 5 and 8 for anonymous visitors. Both sit under a server-wide ceiling
-of 30 searches and 20 calls per ten minutes, so a busy moment can answer with
-"the service is busy" (HTTP 503) even when your own allowance has room —
-that one is not about you. Anonymous callers get exactly what
+Signing in raises your rate limit: 20 searches per ten minutes, against 5 for
+anonymous visitors. That sits under a server-wide ceiling of 30 searches per
+ten minutes, so a busy moment can answer with "the service is busy" (HTTP
+503) even when your own allowance has room — that one is not about you.
+Anonymous callers get exactly what
 they got before accounts existed — signing in raises a ceiling rather than
 lowering anyone else's. The tiers live in
 `src/domain/policies/rateLimitTiers.ts` if you want to change them.
@@ -323,9 +261,9 @@ that looked normal would be the worst thing it could do.
 
 ## Deploying
 
-Everything about this app assumes Vercel — the `maxDuration = 60` budgets in
-both route handlers exist because that is Vercel's Hobby-plan ceiling on a
-function.
+Everything about this app assumes Vercel — the `maxDuration = 60` budget in
+the search route handler exists because that is Vercel's Hobby-plan ceiling
+on a function.
 
 **Set `GEMINI_API_KEY`** as a Vercel environment variable, the same key as
 local dev.
@@ -340,25 +278,24 @@ legitimate thing to want — so it is on you not to ship it. `GET /api/health`
 reporting `upstreams: "fixtures"` is the check.
 
 **Set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`** before
-sending it any real traffic. Without them, three things quietly degrade the
+sending it any real traffic. Without them, two things quietly degrade the
 moment Vercel runs more than one instance of the app at once, which it will
-under concurrent load — none of them error, they just work less well than
-they look like they should:
+under concurrent load — neither errors, they just work less well than they
+look like they should:
 
 - the search-results and website-inspection caches stop being shared across
   instances, so more requests than necessary hit Overpass and Gemini for real
-- the rate limiters on `/api/search` and `/api/call` let through more than
-  their stated limits, since each instance counts independently. This applies
-  to every tier — and it matters most for the server-wide ceiling, because a
+- the rate limiter on `/api/search` lets through more than its stated
+  limits, since each instance counts independently. This applies to every
+  tier — and it matters most for the server-wide ceiling, because a
   per-caller limit that is 3x too loose still bounds one caller, while a
   global limit that is 3x too loose does not bound the API quota it exists to
   protect
-- the one-call-per-clinic rail on agent-placed calls can be bypassed
 
-A free [Upstash](https://upstash.com) Redis database is enough to fix all
-three at once: create one, copy its REST URL and token into those two
-variables, redeploy — `createCache.ts`, `createCallSessionStore.ts`, and
-`createRateLimiter.ts` all switch over automatically, no other change needed.
+A free [Upstash](https://upstash.com) Redis database is enough to fix both
+at once: create one, copy its REST URL and token into those two variables,
+redeploy — `createCache.ts` and `createRateLimiter.ts` both switch over
+automatically, no other change needed.
 
 **Confirm it actually took**: `GET /api/health` reports `sharedStateBackend`
 as `"redis"` once the variables are live. If it still says `"memory"` after

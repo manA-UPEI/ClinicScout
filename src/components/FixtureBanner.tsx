@@ -21,8 +21,8 @@ export default function FixtureBanner() {
       role="alert"
       className="w-full bg-amber-500 px-6 py-2 text-center text-sm font-semibold text-amber-950"
     >
-      ⚠️ Fixture mode — every clinic, website and phone call below is invented
-      test data. Do not use any of it to seek care.
+      ⚠️ Fixture mode — every clinic and website below is invented test data.
+      Do not use any of it to seek care.
     </div>
   );
 }

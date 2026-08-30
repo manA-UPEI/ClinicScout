@@ -17,7 +17,7 @@ export function generateJson<T>(
   schema: ResponseSchema
 ): Promise<T | null> {
   return fixturesEnabled()
-    ? fixtureGenerateJson<T>(prompt, schema)
+    ? fixtureGenerateJson<T>(prompt)
     : geminiGenerateJson<T>(prompt, schema);
 }
 

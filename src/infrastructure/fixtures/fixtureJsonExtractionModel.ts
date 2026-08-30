@@ -1,19 +1,6 @@
 import type { ClinicInspection, Evidence } from "../../domain/entities/clinic.ts";
-import type { ResponseSchema } from "../llm/geminiJsonClient.ts";
 import { EMPTY_INSPECTION } from "../../domain/verification/pageEvidence.ts";
 import { seedByName } from "./fixtureData.ts";
-
-/**
- * Stands in for both single-shot Gemini extractions: clinic-website fields
- * and call-transcript findings.
- *
- * One adapter serves both because the port is one method. Which of the two is
- * being asked for is decided by the schema, not by a flag threaded down from
- * the call site — the caller shouldn't have to know a fixture exists.
- */
-function isInspectionSchema(schema: ResponseSchema): boolean {
-  return Boolean(schema.properties && "accepts_walk_ins" in schema.properties);
-}
 
 /** The prompt's "Clinic name: X" line is how the extraction identifies its subject. */
 function clinicNameFrom(prompt: string): string | null {
@@ -99,77 +86,11 @@ function inspectionFor(prompt: string): RawInspection {
   return INSPECTIONS[name] ?? { ...EMPTY_INSPECTION };
 }
 
-interface ClaimedFindingShape {
-  field: string;
-  value: string;
-  quote: string;
-}
-
-/**
- * Which call fields a spoken line could be evidence for, and how to phrase
- * the value. Order matters only in that the first match wins per field.
- */
-const CALL_MATCHERS: {
-  field: string;
-  test: RegExp;
-  value: (line: string) => string;
-}[] = [
-  {
-    field: "accepts_walk_ins_today",
-    test: /walk[- ]?in/i,
-    value: (line) => (/\b(no|not|can't|cannot|full)\b/i.test(line) ? "No" : "Yes"),
-  },
-  {
-    field: "current_wait",
-    test: /\b(wait|minutes|hour)\b/i,
-    value: (line) => line.match(/\b(?:about |around |roughly )?\d+\s*(?:min\w*|hour\w*)/i)?.[0] ?? "stated on the call",
-  },
-  {
-    field: "next_available",
-    test: /\b(tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
-    value: (line) =>
-      line.match(
-        /\b(tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b[^.]*/i
-      )?.[0] ?? "stated on the call",
-  },
-];
-
-/**
- * Builds findings out of the transcript in the prompt rather than from a
- * canned list.
- *
- * The mock call provider improvises per persona, so a hardcoded quote would
- * only match one of its scripts and silently produce zero verified findings
- * against the others. Quoting the clinic's own lines back means the
- * transcript firewall always has something real to verify, whichever persona
- * answered — and the clinic-turns-only rule is honoured by construction,
- * since only CLINIC lines are read.
- */
-function findingsFor(prompt: string): { findings: ClaimedFindingShape[] } {
-  const clinicLines = [...prompt.matchAll(/^CLINIC: (.+)$/gm)].map((m) => m[1].trim());
-  const findings: ClaimedFindingShape[] = [];
-  const seen = new Set<string>();
-
-  for (const line of clinicLines) {
-    for (const matcher of CALL_MATCHERS) {
-      if (seen.has(matcher.field) || !matcher.test.test(line)) continue;
-      seen.add(matcher.field);
-      findings.push({ field: matcher.field, value: matcher.value(line), quote: line });
-    }
-  }
-
-  return { findings };
-}
-
 /** Always "configured": a fixture run must never take the no-API-key fallback path. */
 export function fixtureGeminiConfigured(): boolean {
   return true;
 }
 
-export async function fixtureGenerateJson<T>(
-  prompt: string,
-  schema: ResponseSchema
-): Promise<T | null> {
-  const result = isInspectionSchema(schema) ? inspectionFor(prompt) : findingsFor(prompt);
-  return result as T;
+export async function fixtureGenerateJson<T>(prompt: string): Promise<T | null> {
+  return inspectionFor(prompt) as T;
 }

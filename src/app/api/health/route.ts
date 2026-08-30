@@ -18,11 +18,10 @@ export const dynamic = "force-dynamic";
  * What an external monitor actually needs to know is narrower: is the
  * deployment itself up, and which backends is it currently configured to use.
  *
- * `sharedStateBackend` covers all three things readRedisConfig() gates —
- * the search/inspection caches, the call-session store, and the rate
- * limiter — since they all switch on the same two env vars together. On
- * "memory", none of the three hold correctly across more than one
- * serverless instance; see ARCHITECTURE.md.
+ * `sharedStateBackend` covers both things readRedisConfig() gates — the
+ * search/inspection caches and the rate limiter — since they both switch on
+ * the same two env vars together. On "memory", neither holds correctly
+ * across more than one serverless instance; see ARCHITECTURE.md.
  *
  * `authConfigured` is false whenever AUTH_SECRET is missing or no OAuth
  * provider has both halves of its credentials — the state where the app
