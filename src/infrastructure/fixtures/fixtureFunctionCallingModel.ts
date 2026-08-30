@@ -11,10 +11,10 @@ import type {
  * A scripted stand-in for Gemini's function-calling loop.
  *
  * It plays the run the system instruction describes as sensible — geocode,
- * search, rank, inspect the front-runners, check the details, finalize — but
- * it is not a fixed list of turns. Each call re-reads the transcript it was
- * handed, works out which tools have already answered, and picks the next
- * step from that. Two things follow, and both matter:
+ * search (already ranked), inspect the front-runners (already detailed),
+ * finalize — but it is not a fixed list of turns. Each call re-reads the
+ * transcript it was handed, works out which tools have already answered, and
+ * picks the next step from that. Two things follow, and both matter:
  *
  * - It uses the *real* tool results. Clinic ids, the ranking order, and which
  *   fields ended up confirmed are all read out of the actual responses, so
@@ -81,10 +81,26 @@ function clinicsToInspect(
   return ranked.map((r) => r.id).filter((id) => withSite.has(id)).slice(0, MAX_INSPECT);
 }
 
-/** The citable fields `get_clinic_details` reports as actually confirmed for this clinic. */
-function confirmedFields(details: Record<string, unknown> | undefined, id: string): string[] {
-  const entries = (details?.details as Record<string, unknown>[] | undefined) ?? [];
-  const record = entries.find((d) => d.id === id);
+/** search_clinics and inspect_clinic_websites both carry `ranked`; the latest one that has it wins. */
+function rankedFrom(
+  search: Record<string, unknown> | undefined,
+  inspect: Record<string, unknown> | undefined
+): RankedEntry[] {
+  return ((inspect?.ranked ?? search?.ranked) as RankedEntry[] | undefined) ?? [];
+}
+
+/** Finds one clinic's record in a `{ results: [...] }` or `{ details: [...] }` shaped response — both built by buildClinicDetail, so they share every field name. */
+function findRecord(
+  response: Record<string, unknown> | undefined,
+  key: "results" | "details",
+  id: string
+): Record<string, unknown> | undefined {
+  const entries = (response?.[key] as Record<string, unknown>[] | undefined) ?? [];
+  return entries.find((e) => e.id === id);
+}
+
+/** The citable fields a clinic's detail record reports as actually confirmed. */
+function confirmedFields(record: Record<string, unknown> | undefined): string[] {
   if (!record) return [];
 
   return (
@@ -133,15 +149,8 @@ export function createFixtureCallable(options: CallableOptions): ModelCallable {
       });
     }
 
-    const rank = latest(responses, "rank_clinics");
-    if (!rank) {
-      return turn("Scoring what came back before I read any websites.", {
-        name: "rank_clinics",
-        args: {},
-      });
-    }
-
-    const ranked = (rank.ranked as RankedEntry[] | undefined) ?? [];
+    // No separate rank_clinics call: search_clinics already came back ranked.
+    const ranked = (search.ranked as RankedEntry[] | undefined) ?? [];
     if (ranked.length === 0) {
       return {
         kind: "text",
@@ -149,7 +158,8 @@ export function createFixtureCallable(options: CallableOptions): ModelCallable {
       };
     }
 
-    if (!latest(responses, "inspect_clinic_websites")) {
+    const inspectResponse = latest(responses, "inspect_clinic_websites");
+    if (!inspectResponse) {
       const targets = clinicsToInspect(search, ranked);
       if (targets.length > 0) {
         return turn("Reading the front-runners' own sites to confirm the details.", {
@@ -159,16 +169,26 @@ export function createFixtureCallable(options: CallableOptions): ModelCallable {
       }
     }
 
-    const top = ranked[0];
+    // Inspection can reorder the ranking (open_now, walk-ins, capacity all
+    // just changed), so re-read it from whichever response is freshest.
+    const currentRanked = rankedFrom(search, inspectResponse);
+    const top = currentRanked[0] ?? ranked[0];
+
+    // inspect_clinic_websites already returns full details for whatever it
+    // touched, so a clinic that was just inspected usually needs no separate
+    // get_clinic_details call — only fall back to it for one that wasn't.
+    const inspected = findRecord(inspectResponse, "results", top.id);
     const details = latest(responses, "get_clinic_details");
-    if (!details) {
+    const record = inspected ?? findRecord(details, "details", top.id);
+
+    if (!record && !details) {
       return turn("Checking exactly what was confirmed before I commit.", {
         name: "get_clinic_details",
         args: { clinic_ids: [top.id] },
       });
     }
 
-    const cited = confirmedFields(details, top.id);
+    const cited = confirmedFields(record);
     return turn(`${top.name} is the best of these — finalizing.`, {
       name: "finalize_recommendation",
       args: {

@@ -186,8 +186,8 @@ for what belongs in each layer and why.
 | `application/search/runGeminiAgentUseCase.ts` | The turn loop: system instruction, budget, turn cap, one nudge to finalize, salvage on early exit |
 | `application/search/agentState.ts` | `RunState` blackboard and the projection boundary |
 | `application/search/citationGuard.ts` | `validateFinalization()` — the citation check and the usability floor |
-| `application/search/inspectClinicUseCase.ts` | Runs one website's extraction, verification, caching and merge back into the record |
-| `application/search/tools/index.ts` + 8 more | The six tools (one file each), `shared.ts`, `stepMessages.ts` |
+| `application/search/inspectClinicUseCase.ts` | `inspect_clinics_batch()` — extraction, verification, caching and merge back into the record; 3+ clinics share one combined Gemini call, fewer run parallel (measured faster below that count) |
+| `application/search/tools/index.ts` + 7 more | The five tools (one file each), `shared.ts`, `stepMessages.ts` |
 | `application/ports/*.ts` | The 9 interfaces application code depends on instead of concrete infrastructure |
 
 </details>

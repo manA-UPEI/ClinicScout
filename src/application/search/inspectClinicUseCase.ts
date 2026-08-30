@@ -22,103 +22,206 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 // discarding it back to "Unknown".
 const inspectionCache = createCache<ClinicInspection>("inspection", CACHE_TTL_MS);
 
-const SCHEMA: ResponseSchema = {
+/** Fields extracted per clinic. Shared between BATCH_SCHEMA's items and nowhere else, since there's only one call site now. */
+const PER_CLINIC_PROPERTIES = {
+  website: {
+    type: "STRING" as const,
+    description: "Exactly the website value shown for this clinic above — used to match this entry back to the right clinic.",
+  },
+  current_capacity: {
+    type: "STRING" as const,
+    nullable: true,
+    description:
+      "Stated current wait time or capacity, e.g. 'approx. 30 min wait'. Null unless the page states it.",
+  },
+  accepts_walk_ins: {
+    type: "BOOLEAN" as const,
+    nullable: true,
+    description: "True only if the page explicitly says walk-ins are accepted.",
+  },
+  appointment_required: {
+    type: "BOOLEAN" as const,
+    nullable: true,
+    description: "True only if the page explicitly says an appointment is required.",
+  },
+  booking_url: {
+    type: "STRING" as const,
+    nullable: true,
+    description: "Absolute URL of an online booking page, if the page links to one.",
+  },
+  email: { type: "STRING" as const, nullable: true, description: "Contact email address." },
+  email_booking_supported: {
+    type: "BOOLEAN" as const,
+    nullable: true,
+    description:
+      "True only if the page explicitly invites booking or appointment requests by email.",
+  },
+  phone: { type: "STRING" as const, nullable: true, description: "Contact phone number." },
+  opening_hours: {
+    type: "STRING" as const,
+    nullable: true,
+    description:
+      "Opening hours exactly as displayed on the page, e.g. 'Mon-Fri 9am-5pm, Sat 10am-2pm'. Copy verbatim — do not reformat. Null unless the page states hours.",
+  },
+  opening_hours_osm: {
+    type: "STRING" as const,
+    nullable: true,
+    description:
+      "Your own translation of opening_hours into OpenStreetMap opening_hours syntax: two-letter day codes (Mo,Tu,We,Th,Fr,Sa,Su), 24-hour HH:MM-HH:MM ranges, ';' between day groups, e.g. 'Mo-Fr 09:00-17:00; Sa 10:00-14:00'. Write 'off' for a day explicitly stated as closed. Return null if you are not confident of an exact translation.",
+  },
+  evidence: {
+    type: "ARRAY" as const,
+    description:
+      "One entry per non-null field above EXCEPT opening_hours_osm, quoting the text that states it, from THIS CLINIC's own page text only. opening_hours_osm is your own translation, not something to quote.",
+    items: {
+      type: "OBJECT" as const,
+      properties: {
+        field: { type: "STRING" as const, enum: INSPECTABLE_FIELDS },
+        quote: {
+          type: "STRING" as const,
+          description:
+            "Text copied character-for-character from this clinic's own page. Do not paraphrase, correct, or shorten mid-word.",
+        },
+      },
+      required: ["field", "quote"],
+    },
+  },
+};
+
+const BATCH_SCHEMA: ResponseSchema = {
   type: "OBJECT",
   properties: {
-    current_capacity: {
-      type: "STRING",
-      nullable: true,
-      description:
-        "Stated current wait time or capacity, e.g. 'approx. 30 min wait'. Null unless the page states it.",
-    },
-    accepts_walk_ins: {
-      type: "BOOLEAN",
-      nullable: true,
-      description: "True only if the page explicitly says walk-ins are accepted.",
-    },
-    appointment_required: {
-      type: "BOOLEAN",
-      nullable: true,
-      description: "True only if the page explicitly says an appointment is required.",
-    },
-    booking_url: {
-      type: "STRING",
-      nullable: true,
-      description: "Absolute URL of an online booking page, if the page links to one.",
-    },
-    email: { type: "STRING", nullable: true, description: "Contact email address." },
-    email_booking_supported: {
-      type: "BOOLEAN",
-      nullable: true,
-      description:
-        "True only if the page explicitly invites booking or appointment requests by email.",
-    },
-    phone: { type: "STRING", nullable: true, description: "Contact phone number." },
-    opening_hours: {
-      type: "STRING",
-      nullable: true,
-      description:
-        "Opening hours exactly as displayed on the page, e.g. 'Mon-Fri 9am-5pm, Sat 10am-2pm'. Copy verbatim — do not reformat. Null unless the page states hours.",
-    },
-    opening_hours_osm: {
-      type: "STRING",
-      nullable: true,
-      description:
-        "Your own translation of opening_hours into OpenStreetMap opening_hours syntax: two-letter day codes (Mo,Tu,We,Th,Fr,Sa,Su), 24-hour HH:MM-HH:MM ranges, ';' between day groups, e.g. 'Mo-Fr 09:00-17:00; Sa 10:00-14:00'. Write 'off' for a day explicitly stated as closed. Return null if you are not confident of an exact translation.",
-    },
-    evidence: {
+    clinics: {
       type: "ARRAY",
-      description:
-        "One entry per non-null field above EXCEPT opening_hours_osm, quoting the text that states it. opening_hours_osm is your own translation, not something to quote.",
+      description: "One entry per \"=== CLINIC N ===\" block above, matched back by the `website` field.",
       items: {
         type: "OBJECT",
-        properties: {
-          field: { type: "STRING", enum: INSPECTABLE_FIELDS },
-          quote: {
-            type: "STRING",
-            description:
-              "Text copied character-for-character from the page. Do not paraphrase, correct, or shorten mid-word.",
-          },
-        },
-        required: ["field", "quote"],
+        properties: PER_CLINIC_PROPERTIES,
+        required: ["website", "evidence"],
       },
     },
   },
-  required: ["evidence"],
+  required: ["clinics"],
 };
 
-function buildPrompt(clinicName: string, pages: FetchedPage[]): string {
-  const pageBlocks = pages
-    .map((p) => `--- PAGE: ${p.url} ---\n${p.text}`)
+interface InspectionCandidate {
+  clinic: Clinic;
+  pages: FetchedPage[];
+}
+
+/**
+ * One prompt covering every candidate at once — see the module doc comment
+ * below `extractRawBatch` for why. Each clinic gets its own labelled block;
+ * the website URL is the field the model echoes back to match its answer to
+ * the right clinic, since it's the one identifier guaranteed both unique and
+ * already known to whoever's reading the response (a short id is an
+ * agent-only concept — this use-case also serves the deterministic pipeline).
+ */
+function buildBatchPrompt(candidates: InspectionCandidate[]): string {
+  const blocks = candidates
+    .map(({ clinic, pages }, i) => {
+      const pageBlocks = pages
+        .map((p) => `--- PAGE: ${p.url} ---\n${p.text}`)
+        .join("\n\n");
+      return [
+        `=== CLINIC ${i + 1} ===`,
+        `Clinic name: ${clinic.clinic_name}`,
+        `Clinic website: ${clinic.website}`,
+        `${pages.length} page(s) were fetched from this clinic's site, shown below.`,
+        "",
+        pageBlocks,
+      ].join("\n");
+    })
     .join("\n\n");
 
   return [
-    "You are extracting facts about a walk-in medical clinic from its own website.",
-    `Clinic name: ${clinicName}`,
-    `${pages.length} page(s) were fetched from this clinic's site, shown below.`,
+    "You are extracting facts about walk-in medical clinics from their own websites.",
+    "Below are one or more clinics, each in its own \"=== CLINIC N ===\" block with its name and website.",
+    "Return one entry in the `clinics` array of your response per clinic block, each carrying the",
+    "exact `website` value shown for that clinic so answers can be matched back correctly.",
     "",
     "Rules:",
     "- Return null for any field the pages do not explicitly state. Never infer, never guess a likely default.",
     "- Absence of a statement is not evidence of the negative. If the pages never mention walk-ins, accepts_walk_ins is null, not false.",
-    "- For every field you return non-null (except opening_hours_osm), add an evidence entry whose quote is copied verbatim from the page text below.",
-    "- A quote that does not appear in the page text will cause that field to be discarded.",
+    "- For every field you return non-null (except opening_hours_osm), add an evidence entry whose quote is copied verbatim from THAT CLINIC'S OWN page text above — never from another clinic's block.",
+    "- A quote that does not appear in that clinic's own page text will cause that field to be discarded.",
     "- opening_hours_osm needs no quote — it is your own translation of opening_hours, not a claim the page makes.",
     "",
-    pageBlocks,
+    blocks,
   ].join("\n");
+}
+
+interface BatchInspectionEntry extends Partial<ClinicInspection> {
+  website?: string;
+}
+
+/**
+ * One `generateJson` call for however many candidates are passed in — the
+ * Gemini-quota win when there are several. But it is not a free win: it
+ * trades wall-clock latency for that. Measured live against 3 real clinics,
+ * one combined call took roughly twice as long as three parallel single-
+ * clinic calls (~15s vs ~8s) — generating N clinics' worth of structured
+ * output is a longer, unavoidably sequential token stream, where three
+ * separate small calls just race each other and finish in whichever one is
+ * slowest. See `extractRaw` below for the threshold this pushes the actual
+ * decision to.
+ *
+ * Extraction is batched, but verification is not: `verifyAgainstPage` still
+ * runs once per clinic against only that clinic's own fetched text (see
+ * `inspect_clinics_batch` below), so a quote can never be "verified" against
+ * a page it didn't actually come from, even if the model mixed clinics up.
+ */
+async function extractRawBatch(
+  candidates: InspectionCandidate[]
+): Promise<Map<string, Partial<ClinicInspection>>> {
+  const result = await generateJson<{ clinics: BatchInspectionEntry[] }>(
+    buildBatchPrompt(candidates),
+    BATCH_SCHEMA
+  );
+
+  const byWebsite = new Map<string, Partial<ClinicInspection>>();
+  for (const entry of result?.clinics ?? []) {
+    if (entry?.website) byWebsite.set(entry.website, entry);
+  }
+  return byWebsite;
+}
+
+/**
+ * Below this many candidates, run one `extractRawBatch` call *per* clinic in
+ * parallel instead of one combined call for all of them — reusing the exact
+ * same prompt/schema machinery with a one-item candidate list each time, just
+ * not sharing a single request. For 1-2 clinics the quota saved by combining
+ * is small (one call, maybe two) and the measured latency cost is real and
+ * immediate; that trade only starts looking worth it once there are enough
+ * clinics that the quota saved is worth more than a request or two.
+ */
+const BATCH_FROM_COUNT = 3;
+
+/**
+ * Extracts every candidate's raw fields, picking parallel-per-clinic or one
+ * combined call based on how many there are — see `BATCH_FROM_COUNT` above.
+ */
+async function extractRaw(
+  candidates: InspectionCandidate[]
+): Promise<Map<string, Partial<ClinicInspection>>> {
+  if (candidates.length < BATCH_FROM_COUNT) {
+    const byWebsite = new Map<string, Partial<ClinicInspection>>();
+    await Promise.all(
+      candidates.map(async (candidate) => {
+        const single = await extractRawBatch([candidate]);
+        const entry = single.get(candidate.clinic.website!);
+        if (entry) byWebsite.set(candidate.clinic.website!, entry);
+      })
+    );
+    return byWebsite;
+  }
+
+  return extractRawBatch(candidates);
 }
 
 /** Reads whatever pages of the clinic's own site are reachable. Empty when the site can't be read at all. */
 async function fetchPagesFor(clinic: Clinic): Promise<FetchedPage[]> {
   return fetchClinicPages(clinic.website!);
-}
-
-/** Asks the model to extract fields from the fetched pages. Null on any model failure. */
-async function extractRaw(
-  clinicName: string,
-  pages: FetchedPage[]
-): Promise<Partial<ClinicInspection> | null> {
-  return generateJson<Partial<ClinicInspection>>(buildPrompt(clinicName, pages), SCHEMA);
 }
 
 /**
@@ -137,20 +240,11 @@ function verify(raw: Partial<ClinicInspection>, pages: FetchedPage[]): ClinicIns
   };
 }
 
-async function inspectLive(clinic: Clinic): Promise<ClinicInspection> {
-  const pages = await fetchPagesFor(clinic);
-  if (pages.length === 0) return EMPTY_INSPECTION;
-
-  const raw = await extractRaw(clinic.clinic_name, pages);
-  if (!raw) return EMPTY_INSPECTION;
-
-  return verify(raw, pages);
-}
-
 /**
- * Decides what inspect_clinic should return, and whether the result is worth
- * caching, given a just-attempted live read and whatever was last cached for
- * this clinic (if anything). Pure and network-free so it's directly testable.
+ * Decides what one clinic's inspection should resolve to, and whether the
+ * result is worth caching, given a just-attempted live read and whatever was
+ * last cached for it (if anything). Pure and network-free so it's directly
+ * testable.
  *
  * A genuine success (verified evidence) is always trusted and cached — never
  * caching a failure, since that would block recovery once whatever went
@@ -165,19 +259,59 @@ export function resolveInspection(
   return { result: stale ?? live, shouldCache: false };
 }
 
-export async function inspect_clinic(clinic: Clinic): Promise<ClinicInspection> {
-  if (!clinic.website) return EMPTY_INSPECTION;
+/**
+ * Inspects every given clinic (each must have a website — callers already
+ * filter for this), returning results keyed by website. Clinics already
+ * cached, or whose site has nothing fetchable, never touch Gemini at all;
+ * whatever's left is extracted per `extractRaw`'s parallel-vs-combined
+ * decision and verified per-clinic before being cached individually, same
+ * as a single inspection always was.
+ */
+export async function inspect_clinics_batch(
+  clinics: Clinic[]
+): Promise<Map<string, ClinicInspection>> {
+  const results = new Map<string, ClinicInspection>();
+  const needsLive: InspectionCandidate[] = [];
 
-  const fresh = await inspectionCache.get(clinic.website);
-  if (fresh) return fresh;
+  await Promise.all(
+    clinics
+      .filter((c): c is Clinic & { website: string } => Boolean(c.website))
+      .map(async (clinic) => {
+        const fresh = await inspectionCache.get(clinic.website);
+        if (fresh) {
+          results.set(clinic.website, fresh);
+          return;
+        }
 
-  const live = await inspectLive(clinic);
-  const { result, shouldCache } = resolveInspection(
-    live,
-    await inspectionCache.getStale(clinic.website)
+        const pages = await fetchPagesFor(clinic);
+        if (pages.length === 0) {
+          results.set(clinic.website, EMPTY_INSPECTION);
+          return;
+        }
+
+        needsLive.push({ clinic, pages });
+      })
   );
-  if (shouldCache) await inspectionCache.set(clinic.website, result);
-  return result;
+
+  if (needsLive.length === 0) return results;
+
+  const rawByWebsite = await extractRaw(needsLive);
+
+  await Promise.all(
+    needsLive.map(async ({ clinic, pages }) => {
+      const website = clinic.website!;
+      const raw = rawByWebsite.get(website);
+      const live = raw ? verify(raw, pages) : EMPTY_INSPECTION;
+      const { result, shouldCache } = resolveInspection(
+        live,
+        await inspectionCache.getStale(website)
+      );
+      if (shouldCache) await inspectionCache.set(website, result);
+      results.set(website, result);
+    })
+  );
+
+  return results;
 }
 
 /**

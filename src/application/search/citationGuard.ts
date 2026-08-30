@@ -51,7 +51,7 @@ export function validateFinalization(
       ok: false,
       error:
         `Unknown clinic_id "${clinicId}". Use an id exactly as returned by ` +
-        `search_clinics or rank_clinics — do not invent or reformat one.`,
+        `search_clinics — do not invent or reformat one.`,
     };
   }
 

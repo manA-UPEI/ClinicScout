@@ -44,10 +44,9 @@ The tools it drives are the same verified ones the app has always used:
 | Tool | What it does |
 |---|---|
 | `geocode_location` | Resolve the typed location via Nominatim |
-| `search_clinics` | Query OpenStreetMap (Overpass); specialty listings filtered out |
-| `inspect_clinic_websites` | Fetch and read clinic sites, keeping only quote-verified facts |
-| `rank_clinics` | Score with the deterministic waterfall |
-| `get_clinic_details` | Read the full verified record, evidence quotes included |
+| `search_clinics` | Query OpenStreetMap (Overpass); specialty listings filtered out. Response already comes back scored by the deterministic waterfall — there is no separate ranking tool |
+| `inspect_clinic_websites` | Fetch and read clinic sites, keeping only quote-verified facts. Three or more clinics are extracted in a single combined Gemini call to save quota; fewer run in parallel instead, since combining wasn't worth the latency on a small batch. Either way the response includes each clinic's full verified record and an updated ranking |
+| `get_clinic_details` | Read the full verified record, evidence quotes included — mainly useful for a clinic that was never inspected |
 | `finalize_recommendation` | Commit to a pick — validated before it is accepted |
 
 ### Gemini decides; it does not get to make things up
@@ -85,14 +84,27 @@ The run streams over SSE, so each decision appears as it is made rather than
 replaying a canned animation after the fact. An inspection that takes four
 seconds looks like four seconds.
 
-**A note on quota.** The agent spends one model call per turn — five or six per
-search, against the old extractor's one — so API budget is the first thing to run
-out, and the single most likely thing to go wrong in a live demo. Both failure
-modes were hit while building this: a per-model free-tier allowance
-(`gemini-2.5-flash` permits 20 requests/day, about three agent runs) and
-account-level `prepayment credits are depleted`, which no model change works
-around. Either way the run degrades to the pipeline and the step log says so
-rather than failing. See [.env.local.example](.env.local.example).
+**A note on quota.** The agent spends one model call per turn, and website
+inspection spends one more per clinic below three, or exactly one combined
+call for three or more — against the old extractor's one call, total, ever
+— so API budget is the first thing to run out, and the single most likely
+thing to go wrong in a live demo. Both failure modes were hit while
+building this: a per-model free-tier allowance (`gemini-2.5-flash` permits
+20 requests/day, about three agent runs) and account-level `prepayment
+credits are depleted`, which no model change works around. Either way the
+run degrades to the pipeline and the step log says so rather than failing.
+See [.env.local.example](.env.local.example).
+
+**Why inspection isn't always one call.** Combining every clinic's
+extraction into a single request is a real quota win, but it's not free:
+measured live against 3 real clinics, one combined call took roughly twice
+as long as three separate calls run in parallel (~15s vs ~8s), since
+generating several clinics' worth of structured output is an unavoidably
+sequential stream, while separate small calls just race each other. Below
+three clinics the quota saved by combining is small — one request, maybe
+two — so [`inspectClinicUseCase.ts`](src/application/search/inspectClinicUseCase.ts)
+keeps them parallel instead; the trade only tips toward combining once
+there's real quota pressure to relieve.
 
 ## Relevance filtering
 
