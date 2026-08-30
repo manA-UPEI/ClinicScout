@@ -40,10 +40,10 @@ export default function EmailDraftModal({
   const mailtoHref = `mailto:${recipientEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/15 p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg animate-scale-in rounded-xl bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/15 p-6 shadow-xl">
         {opened ? (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
+          <div className="flex animate-fade-in-up flex-col items-center gap-3 py-6 text-center">
             <p className="text-lg font-semibold">
               📤 Opened in your email app
             </p>
@@ -53,7 +53,7 @@ export default function EmailDraftModal({
             </p>
             <button
               onClick={onClose}
-              className="mt-2 rounded-lg bg-gray-900 dark:bg-white dark:text-black px-4 py-2 text-sm font-semibold text-white"
+              className="mt-2 rounded-lg bg-gray-900 dark:bg-white dark:text-black px-4 py-2 text-sm font-semibold text-white transition-transform duration-150 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]"
             >
               Close
             </button>
@@ -98,7 +98,7 @@ export default function EmailDraftModal({
               <a
                 href={mailtoHref}
                 onClick={() => setOpened(true)}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-150 hover:bg-blue-700 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
               >
                 Open in Email App
               </a>

@@ -40,7 +40,7 @@ export default function InputForm({ onSubmit }: Props) {
           placeholder="e.g. Charlottetown, PEI"
           maxLength={MAX_LOCATION_LENGTH}
           required
-          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-500"
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none transition-all duration-150 focus:ring-2 focus:ring-blue-500"
         />
       </label>
 
@@ -49,7 +49,7 @@ export default function InputForm({ onSubmit }: Props) {
         <select
           value={urgency}
           onChange={(e) => setUrgency(e.target.value as Urgency)}
-          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white outline-none transition-all duration-150 focus:ring-2 focus:ring-blue-500"
         >
           <option value="routine">Routine</option>
           <option value="urgent">Urgent</option>
@@ -67,13 +67,13 @@ export default function InputForm({ onSubmit }: Props) {
           value={maxRadiusKm}
           onChange={(e) => setMaxRadiusKm(Number(e.target.value))}
           required
-          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none focus:ring-2 focus:ring-blue-500"
+          className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-900 px-3 py-2.5 text-base font-medium text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 outline-none transition-all duration-150 focus:ring-2 focus:ring-blue-500"
         />
       </label>
 
       <button
         type="submit"
-        className="mt-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+        className="mt-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-all duration-150 hover:bg-blue-700 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
       >
         Find a clinic
       </button>

@@ -66,37 +66,51 @@ export default function Page() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center p-6">
-      {phase === "input" && <InputForm onSubmit={handleSubmit} />}
+      {phase === "input" && (
+        <div className="animate-fade-in-up">
+          <InputForm onSubmit={handleSubmit} />
+        </div>
+      )}
 
-      {phase === "searching" && <SearchingState location={location} />}
+      {phase === "searching" && (
+        <div className="animate-fade-in-up">
+          <SearchingState location={location} />
+        </div>
+      )}
 
       {phase === "error" && error && (
-        <ErrorState
-          kind={error.kind}
-          message={error.message}
-          requestId={error.requestId}
-          onRetry={handleStartOver}
-        />
+        <div className="animate-fade-in-up">
+          <ErrorState
+            kind={error.kind}
+            message={error.message}
+            requestId={error.requestId}
+            onRetry={handleStartOver}
+          />
+        </div>
       )}
 
       {phase === "progress" && (
-        <AgentProgress
-          steps={steps}
-          done={result !== null}
-          onComplete={() => setPhase("recommendation")}
-        />
+        <div className="animate-fade-in-up">
+          <AgentProgress
+            steps={steps}
+            done={result !== null}
+            onComplete={() => setPhase("recommendation")}
+          />
+        </div>
       )}
 
       {phase === "recommendation" && result && (
-        <RecommendationView
-          ranked={result.ranked}
-          resolvedLocation={result.resolvedLocation}
-          countryCode={result.countryCode}
-          urgency={result.urgency}
-          excluded={result.excluded}
-          agentReasoning={result.agentReasoning}
-          onStartOver={handleStartOver}
-        />
+        <div className="animate-fade-in">
+          <RecommendationView
+            ranked={result.ranked}
+            resolvedLocation={result.resolvedLocation}
+            countryCode={result.countryCode}
+            urgency={result.urgency}
+            excluded={result.excluded}
+            agentReasoning={result.agentReasoning}
+            onStartOver={handleStartOver}
+          />
+        </div>
       )}
     </main>
   );

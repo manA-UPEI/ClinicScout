@@ -22,6 +22,7 @@ export default function EmergencyBanner({ countryCode }: Props) {
     <div
       role="alert"
       className="rounded-xl border-2 border-red-500 bg-red-50 dark:bg-red-950/30 p-5"
+      style={{ animation: "slide-down 0.3s ease-out both, pulse-ring 1.4s ease-out 1" }}
     >
       <h2 className="text-base font-bold text-red-700 dark:text-red-300">
         {number

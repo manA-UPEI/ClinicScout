@@ -39,12 +39,12 @@ export default function ClinicCard({ clinic, variant }: Props) {
     <div
       className={
         isBest
-          ? "rounded-xl border-2 border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 p-6"
-          : "rounded-xl border border-black/10 dark:border-white/15 p-5"
+          ? "rounded-xl border-2 border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 p-6 transition-shadow duration-200"
+          : "rounded-xl border border-black/10 dark:border-white/15 p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-black/20 dark:hover:border-white/25"
       }
     >
       {isBest && (
-        <div className="mb-2 text-sm font-bold text-blue-600 dark:text-blue-400">
+        <div className="mb-2 animate-fade-in-up text-sm font-bold text-blue-600 dark:text-blue-400">
           🏆 BEST OPTION
         </div>
       )}
@@ -56,19 +56,19 @@ export default function ClinicCard({ clinic, variant }: Props) {
         <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
           {isDeadEnd(clinic) && (
             <span
-              className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+              className="animate-scale-in rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
               title="No address, phone, or email is listed for this clinic"
             >
               No way to reach
             </span>
           )}
           {RELEVANCE_LABEL[clinic.relevance] && (
-            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
+            <span className="animate-scale-in rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">
               {RELEVANCE_LABEL[clinic.relevance]}
             </span>
           )}
           <span
-            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${CONFIDENCE_STYLES[clinic.confidence]}`}
+            className={`animate-scale-in rounded-full px-2.5 py-0.5 text-xs font-medium ${CONFIDENCE_STYLES[clinic.confidence]}`}
           >
             {clinic.confidence} confidence
           </span>
@@ -143,8 +143,12 @@ export default function ClinicCard({ clinic, variant }: Props) {
             Evidence from clinic website ({clinic.evidence.length})
           </summary>
           <ul className="mt-2 space-y-2 border-l-2 border-black/10 dark:border-white/15 pl-3">
-            {clinic.evidence.map((e) => (
-              <li key={e.field}>
+            {clinic.evidence.map((e, i) => (
+              <li
+                key={e.field}
+                className="animate-fade-in-up"
+                style={{ animationDelay: `${Math.min(i, 6) * 50}ms` }}
+              >
                 <span className="text-xs text-gray-400 dark:text-gray-500">
                   {LABELS[e.field]}
                 </span>

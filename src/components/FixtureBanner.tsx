@@ -19,7 +19,7 @@ export default function FixtureBanner() {
   return (
     <div
       role="alert"
-      className="w-full bg-amber-500 px-6 py-2 text-center text-sm font-semibold text-amber-950"
+      className="w-full animate-slide-down bg-amber-500 px-6 py-2 text-center text-sm font-semibold text-amber-950"
     >
       ⚠️ Fixture mode — every clinic and website below is invented test data.
       Do not use any of it to seek care.

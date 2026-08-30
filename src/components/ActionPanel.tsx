@@ -20,7 +20,7 @@ export default function ActionPanel({ clinic }: Props) {
           href={action.bookingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="block w-full rounded-lg bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-blue-700"
+          className="block w-full rounded-lg bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white transition-all duration-150 hover:bg-blue-700 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
         >
           Book Appointment
         </a>
@@ -29,7 +29,7 @@ export default function ActionPanel({ clinic }: Props) {
       {action.kind === "email_verified" && (
         <button
           onClick={() => setModalMode("booking")}
-          className="w-full rounded-lg bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-blue-700"
+          className="w-full rounded-lg bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white transition-all duration-150 hover:bg-blue-700 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
         >
           Review Email Draft
         </button>
@@ -43,7 +43,7 @@ export default function ActionPanel({ clinic }: Props) {
           </p>
           <button
             onClick={() => setModalMode("inquiry")}
-            className="w-full rounded-lg border border-black/15 dark:border-white/20 px-4 py-3 text-center text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/10"
+            className="w-full rounded-lg border border-black/15 dark:border-white/20 px-4 py-3 text-center text-sm font-semibold transition-all duration-150 hover:-translate-y-0.5 hover:bg-black/5 dark:hover:bg-white/10"
           >
             Draft General Inquiry
           </button>
@@ -53,7 +53,7 @@ export default function ActionPanel({ clinic }: Props) {
       {action.kind === "call_only" && (
         <a
           href={`tel:${action.phone}`}
-          className="block w-full rounded-lg bg-green-600 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-green-700"
+          className="block w-full rounded-lg bg-green-600 px-4 py-3 text-center text-sm font-semibold text-white transition-all duration-150 hover:bg-green-700 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
         >
           Call Clinic: {action.phone}
         </a>

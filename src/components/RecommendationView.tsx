@@ -65,11 +65,11 @@ export default function RecommendationView({
     <div className="flex flex-col gap-6 py-6">
       {urgency === "emergency_adjacent" && <EmergencyBanner countryCode={countryCode} />}
 
-      <p className="text-sm text-gray-500 dark:text-gray-400">
+      <p className="animate-fade-in text-sm text-gray-500 dark:text-gray-400">
         Results near {resolvedLocation}
       </p>
 
-      <div>
+      <div className="animate-scale-in">
         <ClinicCard clinic={best} variant="best" />
         {agentReasoning && <AgentRationale reasoning={agentReasoning} />}
         <ActionPanel clinic={best} />
@@ -80,13 +80,19 @@ export default function RecommendationView({
           <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400">
             Other options ({alternatives.length})
           </h2>
-          {visible.map((c) => (
-            <ClinicCard key={c.source_url} clinic={c} variant="alternative" />
+          {visible.map((c, i) => (
+            <div
+              key={c.source_url}
+              className="animate-fade-in-up"
+              style={{ animationDelay: `${Math.min(i, 8) * 60}ms` }}
+            >
+              <ClinicCard clinic={c} variant="alternative" />
+            </div>
           ))}
           {!showAll && alternatives.length > ALTERNATIVES_SHOWN && (
             <button
               onClick={() => setShowAll(true)}
-              className="rounded-lg border border-black/15 dark:border-white/20 px-4 py-2.5 text-sm font-semibold hover:bg-black/5 dark:hover:bg-white/10"
+              className="rounded-lg border border-black/15 dark:border-white/20 px-4 py-2.5 text-sm font-semibold transition-all duration-150 hover:bg-black/5 hover:-translate-y-0.5 dark:hover:bg-white/10"
             >
               Show {alternatives.length - ALTERNATIVES_SHOWN} more
             </button>
@@ -122,9 +128,12 @@ export default function RecommendationView({
       <div className="flex flex-col gap-3 border-t border-black/10 dark:border-white/15 pt-4">
         <button
           onClick={onStartOver}
-          className="self-start text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+          className="group self-start text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
         >
-          ← Start a new search
+          <span className="inline-block transition-transform duration-150 group-hover:-translate-x-0.5">
+            ←
+          </span>{" "}
+          Start a new search
         </button>
         <p className="text-xs text-gray-400 dark:text-gray-500">
           Clinic data from{" "}

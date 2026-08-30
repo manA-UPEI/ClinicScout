@@ -39,12 +39,17 @@ export default function AgentProgress({ steps, done, onComplete }: Props) {
         {steps.map((step, i) => {
           const isCurrent = !done && i === steps.length - 1;
           return (
-            <li key={`${step.id}-${i}`} className="flex items-start gap-2 text-sm">
+            <li
+              key={`${step.id}-${i}`}
+              className="flex animate-fade-in-up items-start gap-2 text-sm"
+            >
               <span className="w-4 shrink-0 text-center leading-5">
                 {isCurrent ? (
-                  <span className="inline-block animate-spin">⟳</span>
+                  <span className="inline-block animate-spin motion-reduce:animate-none">⟳</span>
                 ) : (
-                  "✓"
+                  <span className="inline-block animate-scale-in text-green-600 dark:text-green-400">
+                    ✓
+                  </span>
                 )}
               </span>
               <span>{step.message}</span>
