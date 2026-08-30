@@ -152,7 +152,7 @@ All paths are under `src/`. See [ARCHITECTURE.md](ARCHITECTURE.md#layering)
 for what belongs in each layer and why.
 
 <details>
-<summary><strong>Presentation — client, 15 modules</strong></summary>
+<summary><strong>Presentation — client, 18 modules</strong></summary>
 
 | Module | Role |
 |---|---|
@@ -166,6 +166,9 @@ for what belongs in each layer and why.
 | `ActionPanel.tsx` | Renders whichever next action `determineAction` selected |
 | `EmailDraftModal.tsx` | Editable draft handed to the user's own mail app via a `mailto:` link — the app itself never sends anything |
 | `EmergencyBanner.tsx` | Sits above results when the request is emergency-adjacent |
+| `FixtureBanner.tsx` | Unmissable warning on every page when `USE_FIXTURES` is on and nothing rendered is real |
+| `AuthStatus.tsx` | Rendered in `app/layout.tsx` — who you are and the one link that changes it; renders nothing when no OAuth provider is configured |
+| `Footer.tsx` | Rendered in `app/layout.tsx` — persistent on every phase, not conditional on a search having finished |
 | `ErrorState.tsx` | Renders an AgentError by kind, with a retry |
 | `components/hooks/useStreamedSse.ts` | Owns the fetch+SSE `AbortController` lifecycle for the search flow |
 | `shared/sse/postAndStream.ts` | Framework-agnostic POST + SSE-read loop the hook wraps |
@@ -175,12 +178,27 @@ for what belongs in each layer and why.
 </details>
 
 <details>
-<summary><strong>Interface &amp; application — search orchestration, 10 modules</strong></summary>
+<summary><strong>Interface — API, 9 modules</strong></summary>
 
 | Module | Role |
 |---|---|
 | `app/api/search/route.ts` | Thin controller — parse, validate, call the use-case, SSE-frame events |
+| `app/api/health/route.ts` | Reports Gemini/auth/shared-state configuration for an external uptime check — not a live ping of every upstream |
+| `app/api/auth/[...nextauth]/route.ts` | Auth.js's own sign-in, callback, sign-out, session and CSRF endpoints |
 | `interface/http/sseResponse.ts` | Shared SSE `Response` builder used by `/api/search` |
+| `interface/http/errors.ts` | Shared JSON error responder; carries the rate-limit gate's headers on a rejection |
+| `interface/http/requestId.ts` | One id per request, carried in every error payload and its matching log line |
+| `interface/http/clientIp.ts` | Best-effort caller address from `x-forwarded-for`; `null` rather than a placeholder when there is none |
+| `interface/http/rateLimitSubject.ts` | Which bucket a request counts against — session id, forwarded address, or the shared unidentified bucket |
+| `interface/http/rateLimitGate.ts` | Runs before any work: resolve the subject, consume its tier's limiter, answer 429/503 or hand back `RateLimit-*` headers |
+
+</details>
+
+<details>
+<summary><strong>Application — search orchestration &amp; ports, 10 modules</strong></summary>
+
+| Module | Role |
+|---|---|
 | `application/search/runClinicSearchUseCase.ts` | `runClinicSearch()` — picks the engine, always announces which one answered |
 | `application/search/runDeterministicPipelineUseCase.ts` | `runDeterministicPipeline()` — the fixed pipeline, also the fallback |
 | `application/search/runGeminiAgentUseCase.ts` | The turn loop: system instruction, budget, turn cap, one nudge to finalize, salvage on early exit |
@@ -188,12 +206,14 @@ for what belongs in each layer and why.
 | `application/search/citationGuard.ts` | `validateFinalization()` — the citation check and the usability floor |
 | `application/search/inspectClinicUseCase.ts` | `inspect_clinics_batch()` — extraction, verification, caching and merge back into the record; 3+ clinics share one combined Gemini call, fewer run parallel (measured faster below that count) |
 | `application/search/tools/index.ts` + 7 more | The five tools (one file each), `shared.ts`, `stepMessages.ts` |
-| `application/ports/*.ts` | The 9 interfaces application code depends on instead of concrete infrastructure |
+| `application/auth/getCurrentUser.ts` | Server-component entry point that wires the auth adapter — the one deliberate exception to the layering rule |
+| `application/config/runtimeMode.ts` | Whether the deployment is currently serving fixture data, for `FixtureBanner`/`AgentProgress` |
+| `application/ports/*.ts` | The 8 interfaces application code depends on instead of concrete infrastructure — `Geocoder`, `ClinicDirectory`, `WebsiteFetcher`, `JsonExtractionModel`, `FunctionCallingModel`, `ConfigProvider`, `SessionReader`, `Clock` |
 
 </details>
 
 <details>
-<summary><strong>Domain — entities, policies, verification, 12 modules</strong></summary>
+<summary><strong>Domain — entities, policies, verification, 15 modules</strong></summary>
 
 | Module | Role |
 |---|---|
@@ -206,14 +226,17 @@ for what belongs in each layer and why.
 | `domain/policies/actionability.ts` | `hasContactChannel` / `isLocatable` / `isDeadEnd` — shared by ranking, guards and UI |
 | `domain/policies/excludeSpecialtyListings.ts` | `partitionBySpecialty` — shared by the agent path and the deterministic pipeline |
 | `domain/policies/openingHours.ts` | Conservative OSM opening_hours parser — unsupported syntax returns null, never a guess |
+| `domain/policies/rateLimitTiers.ts` | What each class of caller gets per route, and whether signing in would raise it — pure, no HTTP |
+| `domain/policies/emergencyNumber.ts` | A specific emergency number for a short, high-confidence list of countries; `null` — never a guess — elsewhere |
 | `domain/services/draftAppointmentEmail.ts` | Pure template function |
+| `domain/services/reportClinicIssue.ts` | Pure template function for the "report incorrect information" mailto link |
 | `domain/verification/quoteMatch.ts` | `findVerbatimMatch` — the verbatim-quote primitive Lane A of the fact firewall relies on |
-| `domain/verification/pageEvidence.ts` | Website-claim verification |
+| `domain/verification/pageEvidence.ts` | Quote verification against a fetched page, plus the separate gate on translated opening hours |
 
 </details>
 
 <details>
-<summary><strong>Infrastructure — adapters, 8 modules</strong></summary>
+<summary><strong>Infrastructure — adapters, 24 modules</strong></summary>
 
 | Module | Role |
 |---|---|
@@ -223,8 +246,24 @@ for what belongs in each layer and why.
 | `infrastructure/llm/geminiHttpClient.ts` | Shared transport for both Gemini adapters below |
 | `infrastructure/llm/geminiJsonClient.ts` | Single-shot structured-JSON extraction client; returns null on any failure |
 | `infrastructure/llm/geminiFunctionCallClient.ts` | Function-calling client |
-| `infrastructure/cache/ttlCache.ts` | TTL cache with an injectable clock and a deliberate stale read |
+| `infrastructure/cache/cache.ts` | `Cache<T>` — the shape both cache backends below implement |
+| `infrastructure/cache/ttlCache.ts` | In-memory `Cache<T>` with an injectable clock and a deliberate stale read; single-process only |
+| `infrastructure/cache/redisCache.ts` + `redisRestClient.ts` | Redis-backed `Cache<T>` — same stale-read contract, holds across serverless instances; fails open on a transport error |
+| `infrastructure/cache/createCache.ts` | Picks Redis when configured, else the in-memory cache |
+| `infrastructure/ratelimit/rateLimiter.ts` | `RateLimiter` — the shape both limiters below implement |
+| `infrastructure/ratelimit/fixedWindowRateLimiter.ts` | In-memory `RateLimiter`; single-process only |
+| `infrastructure/ratelimit/redisRateLimiter.ts` | Redis-backed `RateLimiter` — one INCR+EXPIRE counter shared across every serverless instance |
+| `infrastructure/ratelimit/createRateLimiter.ts` | Picks Redis when configured, else the in-memory limiter — one instance per route and tier |
+| `infrastructure/auth/nextAuth.ts` | The only module that imports `next-auth`; registers whichever OAuth providers have credentials |
+| `infrastructure/auth/sessionUser.ts` | Pure session→`AuthenticatedUser` mapping and the subject format; never loads `next-auth` |
+| `infrastructure/auth/authJsSessionReader.ts` | Implements `SessionReader` over `auth()`; an unverifiable cookie lands on the anonymous path |
 | `infrastructure/config/env.ts` | The one place `GEMINI_API_KEY`/`GEMINI_MODEL` are read from `process.env` |
+| `infrastructure/config/redisConfig.ts` | The one place `UPSTASH_REDIS_REST_URL`/`_TOKEN` are read |
+| `infrastructure/config/authProviders.ts` | The one place `AUTH_SECRET` and the `AUTH_<PROVIDER>_ID`/`_SECRET` pairs are read |
+| `infrastructure/config/fixtureMode.ts` | The one place `USE_FIXTURES` is read; warns once per process when it is on |
+| `infrastructure/fixtures/*.ts` | Canned stand-ins for all five upstreams |
+| `infrastructure/{geo,web,llm}/create*.ts` | Fixture-or-live selection, one per port — same shape as `createCache.ts` |
+| `infrastructure/logging/logger.ts` | Shared pino logger — JSON in production, pretty-printed in dev |
 
 </details>
 
@@ -250,6 +289,8 @@ rather than merely incorrect:
 - `openingHours.test.ts` — the parser refusing to guess
 - `classifyClinic.test.ts` — specialty names beating walk-in names
 - `excludeSpecialtyListings.test.ts` — the agent path and deterministic pipeline agreeing on the same input
+- `redisCache.test.ts` — the stale-read contract and failing open on a transport error, against a fake transport
+- `redisRateLimiter.test.ts` — the INCR+EXPIRE window, and falling back to the full window when a TTL is unexpectedly missing
 
 Model pinned to `gemini-2.5-flash` rather than an alias —
 `gemini-flash-latest` resolved to a preview model with a much tighter quota
