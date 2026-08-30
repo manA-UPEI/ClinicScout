@@ -32,6 +32,8 @@ export interface AgentRunResult {
   steps: AgentStep[];
   ranked: RankedClinic[];
   resolvedLocation: string;
+  /** ISO 3166-1 alpha-2, lowercase. Null when the geocoder didn't return one — drives which emergency number the banner shows. */
+  countryCode: string | null;
   urgency: Urgency;
   excluded: ExcludedSpecialty[];
   mode: RunMode;

@@ -60,7 +60,7 @@ function fakeTools(clinics: Clinic[]) {
     calls.push(name);
 
     if (name === "geocode_location") {
-      state.place = { lat: 46.2, lon: -63.1, display_name: "Charlottetown, PE" };
+      state.place = { lat: 46.2, lon: -63.1, display_name: "Charlottetown, PE", countryCode: "ca" };
       return { response: { display_name: "Charlottetown, PE" } };
     }
     if (name === "search_clinics") {

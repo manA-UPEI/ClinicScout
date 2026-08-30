@@ -118,7 +118,12 @@ The selector changes behaviour rather than decorating the form:
   book ahead.
 - **Urgent** — open-now and confirmed walk-in clinics rank first.
 - **Emergency-adjacent** — ranks as urgent, and the results open with a banner
-  telling the user to call 911 rather than travel to a clinic.
+  telling the user to call an emergency number rather than travel to a
+  clinic. The number named is specific to the searched location when the
+  geocoder resolves a country this app recognizes
+  ([`emergencyNumberFor`](src/domain/policies/emergencyNumber.ts)) and a
+  generic "your local emergency number" otherwise — it never assumes 911 for
+  a search outside North America.
 
 ## Surviving a busy Overpass
 
@@ -189,7 +194,10 @@ Known limits, stated plainly:
 - Relevance classification is keyword-based, so an oddly-named specialty clinic
   can slip through as `unknown`. The excluded panel makes the filter's decisions
   reviewable.
-- OSM data can be stale or incomplete. The UI says to call ahead.
+- OSM data can be stale or incomplete. The UI says to call ahead, and every
+  clinic card can mail a report of what's wrong straight to whoever configured
+  `NEXT_PUBLIC_REPORT_EMAIL` — see `.env.local.example`. Unset, the link just
+  doesn't render.
 
 ## Signing in
 

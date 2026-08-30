@@ -103,6 +103,7 @@ function buildResult(state: RunState, mode: "agent" | "deterministic"): AgentRun
     steps: [],
     ranked,
     resolvedLocation: state.place?.display_name ?? state.input.location,
+    countryCode: state.place?.countryCode ?? null,
     urgency: state.input.urgency,
     excluded: state.excluded,
     mode,

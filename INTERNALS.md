@@ -164,7 +164,7 @@ for what belongs in each layer and why.
 | `ClinicCard.tsx` | One clinic, with a ✓ on each field quoted from its own site |
 | `FieldValue.tsx` | The only renderer for a nullable field — always "Unknown", never a guessed "No" |
 | `ActionPanel.tsx` | Renders whichever next action `determineAction` selected |
-| `EmailDraftModal.tsx` | Editable draft, explicitly mocked — nothing is ever sent |
+| `EmailDraftModal.tsx` | Editable draft handed to the user's own mail app via a `mailto:` link — the app itself never sends anything |
 | `EmergencyBanner.tsx` | Sits above results when the request is emergency-adjacent |
 | `ErrorState.tsx` | Renders an AgentError by kind, with a retry |
 | `components/hooks/useStreamedSse.ts` | Owns the fetch+SSE `AbortController` lifecycle for the search flow |
